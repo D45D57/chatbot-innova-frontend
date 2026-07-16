@@ -14,15 +14,15 @@ const NAV_ITEMS = [
   { id: 'consultas', label: 'Consultas', icon: '💬', path: '/consultas' },
   { id: 'catalogo', label: 'Catálogo', icon: '🛍️', path: '/catalogo' },
   { id: 'faq', label: 'FAQ', icon: '❓', path: '/faq' },
-  { id: 'configuracion', label: 'Configuración', icon: '⚙️', path: '/configuracion' },
+  { id: 'configuracion', label: 'Configuración', icon: '⚙️', path: '/configurar' },
 ]
 
 export function Drawer({ business, isOpen, onClose, activeItem = 'dashboard' }: DrawerProps) {
   const navigate = useNavigate()
   const { logout } = useAuth()
 
-  const handleNav = (path: string) => {
-    navigate(path)
+  const handleNav = (item: typeof NAV_ITEMS[number]) => {
+    navigate(item.path, item.id === 'faq' ? { state: { resetFaqView: Date.now() } } : undefined)
     onClose()
   }
 
@@ -101,7 +101,7 @@ export function Drawer({ business, isOpen, onClose, activeItem = 'dashboard' }: 
           {NAV_ITEMS.map(item => (
             <button
               key={item.id}
-              onClick={() => handleNav(item.path)}
+              onClick={() => handleNav(item)}
               style={{
                 display: 'flex',
                 alignItems: 'center',

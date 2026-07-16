@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import type { User } from '../types'
+import { apiRequest } from '../services/apiClient'
 
 interface AuthContextType {
   user: User | null
@@ -11,9 +12,19 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-// Mock de usuarios (hasta integrar el backend)
-const MOCK_USERS_KEY = 'eb_users'
 const CURRENT_USER_KEY = 'eb_current_user'
+const TOKEN_KEY = 'eb_auth_token'
+
+interface LoginResponse {
+  success: boolean
+  token: string
+  usuario: { id: string; nombre: string; email: string; rol: string }
+}
+
+interface RegisterResponse {
+  success: boolean
+  usuarioId: string
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -26,42 +37,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = async (email: string, password: string) => {
-    // Simula llamada al backend
-    await new Promise(r => setTimeout(r, 600))
-    const stored = localStorage.getItem(MOCK_USERS_KEY)
-    const users: (User & { password: string })[] = stored ? JSON.parse(stored) : []
-    const found = users.find(u => u.email === email && u.password === password)
-    if (!found) throw new Error('Email o contraseña incorrectos')
-    const { password: _, ...userData } = found
+    const data = await apiRequest<LoginResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+      auth: false,
+    })
+
+    localStorage.setItem(TOKEN_KEY, data.token)
+
+    const userData: User = {
+      id: data.usuario.id,
+      nombre: data.usuario.nombre,
+      email: data.usuario.email,
+      slug: data.usuario.nombre.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, ''),
+    }
+
     setUser(userData)
     localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(userData))
   }
 
   const register = async (nombre: string, email: string, password: string, _rubro: string): Promise<User> => {
-    await new Promise(r => setTimeout(r, 600))
-    const stored = localStorage.getItem(MOCK_USERS_KEY)
-    const users: (User & { password: string })[] = stored ? JSON.parse(stored) : []
-    if (users.find(u => u.email === email)) throw new Error('El email ya está registrado')
+    await apiRequest<RegisterResponse>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ nombre, email, password }),
+      auth: false,
+    })
 
-    const slug = nombre.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '')
-    const newUser: User & { password: string } = {
-      id: crypto.randomUUID(),
-      email,
-      nombre,
-      slug,
-      password,
-    }
-    users.push(newUser)
-    localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(users))
-    const { password: _, ...userData } = newUser
-    setUser(userData)
-    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(userData))
-    return userData
+    // Después del registro, hacemos login automático para obtener el token
+    await login(email, password)
+
+    const saved = localStorage.getItem(CURRENT_USER_KEY)
+    return saved ? JSON.parse(saved) : { id: '', nombre, email, slug: '' }
   }
 
   const logout = () => {
     setUser(null)
     localStorage.removeItem(CURRENT_USER_KEY)
+    localStorage.removeItem(TOKEN_KEY)
   }
 
   return (
