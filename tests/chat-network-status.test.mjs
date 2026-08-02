@@ -9,6 +9,7 @@ const notice = readSource('src/components/chat/ConnectionNotice.tsx')
 const useChat = readSource('src/hooks/useChat.ts')
 const errors = readSource('src/utils/networkError.ts')
 const quickReplies = readSource('src/components/chat/QuickReplies.tsx')
+const styles = readSource('src/index.css')
 
 test('el hook inicia con navigator.onLine, escucha ambos eventos y limpia listeners', () => {
   assert.match(hook, /useState\(\(\) => navigator\.onLine\)/)
@@ -19,11 +20,22 @@ test('el hook inicia con navigator.onLine, escucha ambos eventos y limpia listen
 })
 
 test('el aviso es accesible y el reintento evita múltiples ejecuciones', () => {
-  assert.match(notice, /role="alert" aria-live="polite"/)
+  assert.match(notice, /role="status" aria-live="polite" aria-busy={isRetrying}/)
   assert.match(notice, /Sin conexión/)
+  assert.match(notice, /Verificando conexión…/)
+  assert.match(notice, /Seguís sin conexión\. Revisá tu internet e intentá nuevamente\./)
   assert.match(notice, /disabled={isRetrying}/)
-  assert.match(page, /if \(!slug \|\| !navigator\.onLine \|\| isRetrying\)/)
+  assert.match(page, /if \(!slug \|\| isRetrying\) return/)
+  assert.match(page, /if \(!navigator\.onLine\)/)
   assert.match(page, /Promise\.all\(\[/)
+})
+
+test('el aviso ocupa una fila propia sin superponer mensajes ni dejar huecos al ocultarse', () => {
+  assert.match(styles, /grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto auto/)
+  assert.match(styles, /grid-template-areas:[\s\S]*"header"[\s\S]*"connection"[\s\S]*"messages"[\s\S]*"suggestions"[\s\S]*"input"/)
+  assert.match(styles, /\.public-chat__connection\s*{[\s\S]*grid-area: connection/)
+  assert.match(styles, /\.public-chat__messages\s*{[\s\S]*grid-area: messages/)
+  assert.doesNotMatch(styles, /\.public-chat__connection\s*{[^}]*position:\s*(?:absolute|fixed|sticky)/)
 })
 
 test('el reintento recupera estado pero no reenvía operaciones sensibles', () => {

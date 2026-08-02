@@ -33,6 +33,7 @@ export function ChatbotPage({ preview = false }: { preview?: boolean }) {
   const isBrowserOnline = useNetworkStatus()
   const [hasNetworkError, setHasNetworkError] = useState(false)
   const [isRetrying, setIsRetrying] = useState(false)
+  const [retryStatus, setRetryStatus] = useState<'offline' | 'server' | null>(null)
 
   const closePreview = useCallback(() => {
     const hasBackground = Boolean((location.state as { backgroundPath?: string } | null)?.backgroundPath)
@@ -81,11 +82,19 @@ export function ChatbotPage({ preview = false }: { preview?: boolean }) {
   }, [slug])
 
   const retryConnection = useCallback(async () => {
-    if (!slug || !navigator.onLine || isRetrying) {
+    if (!slug || isRetrying) return
+
+    setIsRetrying(true)
+    setRetryStatus(null)
+
+    if (!navigator.onLine) {
+      await new Promise(resolve => window.setTimeout(resolve, 350))
       setHasNetworkError(true)
+      setRetryStatus('offline')
+      setIsRetrying(false)
       return
     }
-    setIsRetrying(true)
+
     try {
       const [nextBusiness, nextFaqs, nextProducts] = await Promise.all([
         getPublicBusinessApi(slug),
@@ -96,8 +105,14 @@ export function ChatbotPage({ preview = false }: { preview?: boolean }) {
       setPublicFaqs(nextFaqs)
       setPublicProducts(nextProducts)
       setHasNetworkError(false)
+      setRetryStatus(null)
     } catch (error) {
-      if (isNetworkError(error)) setHasNetworkError(true)
+      if (isNetworkError(error)) {
+        setHasNetworkError(true)
+        setRetryStatus('offline')
+      } else {
+        setRetryStatus('server')
+      }
     } finally {
       setIsRetrying(false)
     }
@@ -115,7 +130,7 @@ export function ChatbotPage({ preview = false }: { preview?: boolean }) {
   }
 
   if (!business && (!isBrowserOnline || hasNetworkError)) {
-    return <main className="public-chat__load-error"><ConnectionNotice isRetrying={isRetrying} onRetry={() => void retryConnection()} /></main>
+    return <main className="public-chat__load-error"><ConnectionNotice isRetrying={isRetrying} retryStatus={retryStatus} onRetry={() => void retryConnection()} /></main>
   }
 
   if (!business) {
@@ -158,6 +173,7 @@ export function ChatbotPage({ preview = false }: { preview?: boolean }) {
       onClose={preview ? closePreview : undefined}
       isOnline={isBrowserOnline && !hasNetworkError}
       isRetrying={isRetrying}
+      retryStatus={retryStatus}
       onNetworkError={() => setHasNetworkError(true)}
       onRetry={() => void retryConnection()}
     />
@@ -174,11 +190,12 @@ interface PublicChatProps {
   onClose?: () => void
   isOnline: boolean
   isRetrying: boolean
+  retryStatus: 'offline' | 'server' | null
   onNetworkError: () => void
   onRetry: () => void
 }
 
-function PublicChat({ business, preview, onClose, isOnline, isRetrying, onNetworkError, onRetry }: PublicChatProps) {
+function PublicChat({ business, preview, onClose, isOnline, isRetrying, retryStatus, onNetworkError, onRetry }: PublicChatProps) {
   const {
     messages,
     isTyping,
@@ -267,7 +284,7 @@ function PublicChat({ business, preview, onClose, isOnline, isRetrying, onNetwor
         isOnline={isOnline}
       />
 
-      {!isOnline && <ConnectionNotice isRetrying={isRetrying} onRetry={onRetry} />}
+      {!isOnline && <ConnectionNotice isRetrying={isRetrying} retryStatus={retryStatus} onRetry={onRetry} />}
 
       <div ref={messagesContainerRef} className="public-chat__messages">
         {messages.map(message => (
