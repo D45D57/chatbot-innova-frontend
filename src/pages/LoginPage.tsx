@@ -23,7 +23,7 @@ export function LoginPage() {
 
   const continueAfterLogin = async (userId: string) => {
     const business = await loadBusiness(userId)
-    navigate(business ? '/dashboard' : '/configurar', { replace: true })
+    navigate(business?.nombre ? '/dashboard' : '/configurar', { replace: true })
   }
 
   const handleSubmit = async (e: FormEvent) => {

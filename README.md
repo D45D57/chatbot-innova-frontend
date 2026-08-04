@@ -20,6 +20,7 @@ El frontend está construido como una SPA con React, TypeScript y Vite. Consume 
 
 - [Características principales](#características-principales)
 - [Flujo general](#flujo-general)
+- [Experiencia de Usuario (UX/UI)](#experiencia-de-usuario-uxui)
 - [Tecnologías](#tecnologías)
 - [Requisitos](#requisitos)
 - [Instalación](#instalación)
@@ -89,6 +90,34 @@ flowchart LR
     B --> P[Prisma ORM]
     P --> D[(PostgreSQL)]
 ```
+## Experiencia de Usuario (UX/UI)
+
+La experiencia de usuario y la interfaz de EmprendeBot fueron diseñadas con el objetivo de ofrecer una herramienta simple, intuitiva y accesible para emprendedores, priorizando una navegación clara y una interacción guiada en cada etapa del proceso.
+
+El diseño se desarrolló íntegramente en Figma, utilizando componentes reutilizables, Auto Layout, variantes, variables y prototipos interactivos, permitiendo mantener la consistencia visual y facilitando la implementación del proyecto.
+
+Durante el desarrollo se trabajó de forma iterativa, definiendo flujos, arquitectura de la información, pantallas y componentes que evolucionaron a medida que avanzaba el proyecto, integrando las necesidades de los usuarios con la viabilidad técnica del desarrollo.
+
+Las principales interfaces diseñadas incluyen:
+
+- Onboarding e inicio de sesión.
+- Registro y configuración del negocio.
+- Dashboard principal.
+- Catálogo de productos y servicios.
+- Gestión de consultas y presupuestos.
+- Administración de preguntas frecuentes.
+- Configuración del asistente.
+- Chatbot para clientes.
+
+Como parte del proceso de UX/UI, también se implementaron interfaces en un entorno de desarrollo propio para validar los diseños directamente sobre el código, realizar los ajustes necesarios y facilitar su integración al proyecto principal.
+
+Este trabajo permitió mantener la coherencia entre el diseño y la aplicación desarrollada, acompañando la evolución del producto desde su concepción en Figma hasta su implementación en el Frontend.
+
+### Recursos de diseño
+
+El archivo de Figma documenta la evolución completa del proyecto, incluyendo investigación, exploración de ideas, wireframes, flujos, prototipos, componentes, iteraciones y versiones previas del diseño.
+
+🔗 **Prototipo y proceso de diseño en Figma:** https://www.figma.com/design/ML5s4dnzzXyFI0wkwd5AVN/InnovaLab-equipo-16?node-id=24-111&t=GW8pB3Ki0qWEY2dB-1
 
 ## Tecnologías
 
