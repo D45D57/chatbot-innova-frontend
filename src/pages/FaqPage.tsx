@@ -15,6 +15,7 @@ import type { FAQ, FAQFormData, FAQSuggestion } from '../types'
 import { DUPLICATE_FAQ_MESSAGE, normalizeFaqQuestion } from '../utils/normalizeFaqQuestion'
 import { openChatPreview } from '../utils/chatRoutes'
 import { getFaqSuggestionsApi } from '../services/faqApi'
+import { getUserFacingErrorMessage } from '../services/apiClient'
 import '../styles/faq.css'
 
 export function FaqPage() {
@@ -110,7 +111,7 @@ export function FaqPage() {
       setSuggestions(await getFaqSuggestionsApi())
     } catch (caught) {
       setSuggestions(null)
-      setSuggestionsError(caught instanceof Error ? caught.message : 'No pudimos cargar las preguntas sugeridas.')
+      setSuggestionsError(getUserFacingErrorMessage(caught, { fallback: 'No pudimos cargar las preguntas sugeridas. Intentá nuevamente.' }))
     } finally {
       setSuggestionsLoading(false)
     }
@@ -125,7 +126,7 @@ export function FaqPage() {
       setSelectedSuggestionIds([])
       setShowSuggestions(false)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No pudimos agregar las preguntas seleccionadas.')
+      setError(getUserFacingErrorMessage(caught, { fallback: 'No pudimos agregar las preguntas seleccionadas. Intentá nuevamente.' }))
     } finally {
       setFormLoading(false)
     }
@@ -154,7 +155,7 @@ export function FaqPage() {
       else await createFaq(data)
       closeForm()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No pudimos guardar la pregunta frecuente.')
+      setError(getUserFacingErrorMessage(caught, { fallback: 'No pudimos guardar la pregunta frecuente. Intentá nuevamente.' }))
     } finally {
       setFormLoading(false)
     }
@@ -168,7 +169,7 @@ export function FaqPage() {
       await deleteFaq(deleteTarget.id)
       setDeleteTarget(null)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No pudimos eliminar la pregunta frecuente.')
+      setError(getUserFacingErrorMessage(caught, { fallback: 'No pudimos eliminar la pregunta frecuente. Intentá nuevamente.' }))
     } finally {
       setBusyFaqId(null)
     }

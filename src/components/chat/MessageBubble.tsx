@@ -13,17 +13,16 @@ function formatTime(date: Date): string {
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isBot = message.role === 'bot'
-  const isHelpfulPrompt = message.action === 'ASK_IF_HELPFUL'
 
   return (
     <div style={{
       display: 'flex',
-      justifyContent: isBot && !isHelpfulPrompt ? 'flex-start' : isHelpfulPrompt ? 'center' : 'flex-end',
+      justifyContent: isBot ? 'flex-start' : 'flex-end',
       alignItems: 'flex-end',
       gap: '8px',
       marginBottom: '4px',
     }}>
-      {isBot && !isHelpfulPrompt && (
+      {isBot && (
         <img
           src="/isoBot-transparente.png"
           alt="EmprendeBot"
@@ -31,35 +30,34 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         />
       )}
       <div style={{
-        maxWidth: isHelpfulPrompt ? '100%' : '82%',
+        maxWidth: '82%',
         display: 'flex',
         flexDirection: 'column',
-        alignItems: isBot && !isHelpfulPrompt ? 'flex-start' : isHelpfulPrompt ? 'center' : 'flex-end',
+        alignItems: isBot ? 'flex-start' : 'flex-end',
         gap: '4px',
       }}>
         <div style={{
-          padding: isHelpfulPrompt ? '4px 8px' : '10px 14px',
+          padding: '10px 14px',
           borderRadius: isBot
             ? '4px var(--radius-md) var(--radius-md) var(--radius-md)'
             : 'var(--radius-md) 4px var(--radius-md) var(--radius-md)',
-          background: isHelpfulPrompt ? 'transparent' : isBot ? 'var(--color-bg)' : 'var(--color-bg-answer)',
-          color: isHelpfulPrompt ? 'var(--color-text-secondary)' : isBot ? 'var(--color-text-primary)' : '#fff',
-          fontSize: isHelpfulPrompt ? '12px' : '14px',
-          fontWeight: isHelpfulPrompt ? 500 : 400,
+          background: isBot ? 'var(--color-bg)' : 'var(--color-bg-answer)',
+          color: isBot ? 'var(--color-text-primary)' : '#fff',
+          fontSize: '14px',
           lineHeight: '1.5',
-          boxShadow: isHelpfulPrompt ? 'none' : 'var(--shadow-sm)',
+          boxShadow: 'var(--shadow-sm)',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}>
           {message.text}
         </div>
-        {!isHelpfulPrompt && <span style={{
+        <span style={{
           fontSize: '11px',
           color: 'var(--color-text-secondary)',
           padding: '0 4px',
         }}>
           {formatTime(message.timestamp)}
-        </span>}
+        </span>
       </div>
     </div>
   )

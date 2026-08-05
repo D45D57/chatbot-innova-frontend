@@ -7,6 +7,7 @@ const readSource = relativePath =>
 
 const app = readSource('src/App.tsx')
 const chatbotPage = readSource('src/pages/ChatbotPage.tsx')
+const useChat = readSource('src/hooks/useChat.ts')
 const chatRoutes = readSource('src/utils/chatRoutes.ts')
 const businessConfig = readSource('src/pages/BusinessConfigPage.tsx')
 const floatingWindow = readSource('src/components/chat/FloatingChatWindow.tsx')
@@ -112,6 +113,9 @@ test('el preview inicia con la configuracion actual y no restaura un saludo ante
     chatbotPage,
     /if \(!preview \|\| previewInitializedRef\.current\) return[\s\S]*previewInitializedRef\.current = true[\s\S]*reset\(\)/,
   )
+  assert.match(useChat, /const restorationVersion = conversationVersionRef\.current/)
+  assert.match(useChat, /restorationVersion !== conversationVersionRef\.current/)
+  assert.match(useChat, /const reset = useCallback[\s\S]*conversationVersionRef\.current \+= 1/)
 })
 
 test('la ventana usa Pointer Events y limita su posición al viewport', () => {

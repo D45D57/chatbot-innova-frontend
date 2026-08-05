@@ -8,6 +8,7 @@ import {
 } from '../services/productApi'
 import { AppIcon } from '../components/ui/AppIcon'
 import { ConfirmationDialog } from '../components/ui/ConfirmationDialog'
+import { getUserFacingErrorMessage, UserFacingError } from '../services/apiClient'
 import '../styles/catalog.css'
 
 interface ProductForm {
@@ -69,7 +70,7 @@ export function ProductFormPage() {
       setLoadError('')
       try {
         const product = await getProductByIdApi(id)
-        if (!product) throw new Error('El producto no existe o no pertenece a tu catálogo.')
+        if (!product) throw new UserFacingError('El producto no existe o no pertenece a tu catálogo.')
         if (!active) return
         const loadedForm = {
           nombre: product.nombre,
@@ -82,7 +83,7 @@ export function ProductFormPage() {
         setInitialFormSnapshot(JSON.stringify(loadedForm))
         setForm(loadedForm)
       } catch (caught) {
-        if (active) setLoadError(caught instanceof Error ? caught.message : 'No pudimos cargar el producto.')
+        if (active) setLoadError(getUserFacingErrorMessage(caught, { fallback: 'No pudimos cargar el producto. Intentá nuevamente.' }))
       } finally {
         if (active) setIsLoading(false)
       }
@@ -150,7 +151,7 @@ export function ProductFormPage() {
         navigate('/catalogo', { state: { successMessage: 'Producto creado correctamente.' } })
       }
     } catch (caught) {
-      setFormError(caught instanceof Error ? caught.message : 'No pudimos guardar el producto.')
+      setFormError(getUserFacingErrorMessage(caught, { fallback: 'No pudimos guardar el producto. Intentá nuevamente.' }))
     } finally {
       setIsSubmitting(false)
     }

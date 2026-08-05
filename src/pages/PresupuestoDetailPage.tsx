@@ -350,7 +350,7 @@ export function PresupuestoDetailPage() {
                 <section className="budget-panel budget-quote-form">
                   <div>
                     <h2>Cotizar presupuesto</h2>
-                    <p>El total definitivo será calculado por el backend.</p>
+                    <p>El total se actualizará automáticamente con los importes ingresados.</p>
                   </div>
                   {quoteItems.map((item, index) => (
                     <div className="budget-quote-row" key={`${item.productoId ?? 'item'}-${index}`}>

@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button'
 import { GoogleAuthButton } from '../components/auth/GoogleAuthButton'
 import { useAuth } from '../context/AuthContext'
 import { useBusiness } from '../context/BusinessContext'
+import { getUserFacingErrorMessage } from '../services/apiClient'
 
 export function PresentationPage() {
   const navigate = useNavigate()
@@ -26,7 +27,7 @@ export function PresentationPage() {
       const business = await loadBusiness(user.id)
       navigate(business ? '/dashboard' : '/configurar', { replace: true })
     } catch (error) {
-      setGoogleError(error instanceof Error ? error.message : 'No pudimos continuar con Google.')
+      setGoogleError(getUserFacingErrorMessage(error, { context: 'google' }))
     } finally {
       setGoogleLoading(false)
     }

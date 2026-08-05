@@ -9,7 +9,6 @@ const types = readSource('src/types/index.ts')
 const useChat = readSource('src/hooks/useChat.ts')
 const chatbotPage = readSource('src/pages/ChatbotPage.tsx')
 const quickReplies = readSource('src/components/chat/QuickReplies.tsx')
-const messageBubble = readSource('src/components/chat/MessageBubble.tsx')
 const quoteSummary = readSource('src/components/chat/QuoteSummaryCard.tsx')
 const productCatalog = readSource('src/components/chat/ProductCatalogMessage.tsx')
 const storage = readSource('src/services/chatStorage.ts')
@@ -40,59 +39,29 @@ test('las acciones de FAQ y catálogo están migradas', () => {
   assert.match(useChat, /SELECT_FAQ: \(\) => createSelectedFaqResponse\(option\.value, business\)/)
 })
 
-test('la utilidad usa acciones internas y solamente se ofrece tras FAQ y horarios', () => {
-  assert.match(types, /'ASK_IF_HELPFUL'[\s\S]*'HELPFUL_YES'[\s\S]*'HELPFUL_NO'/)
-  assert.match(useChat, /const HELPFUL_QUESTION = '¿Te fue útil\?'/)
-  assert.match(useChat, /createSelectedFaqResponse[\s\S]*askIfHelpful: true/)
-  assert.match(useChat, /createScheduleResponse[\s\S]*askIfHelpful: true/)
-  assert.equal((useChat.match(/askIfHelpful: true/g) ?? []).length, 2)
-  assert.match(useChat, /HELPFUL_YES: createMainMenuResponse/)
-  assert.match(useChat, /HELPFUL_NO: createHelpfulNoResponse/)
-  assert.match(useChat, /label: 'Hablar con una persona'[\s\S]*MAIN_MENU_REPLY/)
-})
-
-test('la utilidad también aparece únicamente después de generar el presupuesto con éxito', () => {
-  const generatedQuoteBranch = useChat.slice(
-    useChat.indexOf('const generatedMsg: Message'),
-    useChat.indexOf('} catch (error)', useChat.indexOf('const generatedMsg: Message')),
-  )
-  assert.match(generatedQuoteBranch, /const helpfulQuestionMsg = createHelpfulQuestionMessage\(\[/)
-  assert.match(generatedQuoteBranch, /generatedMsg, followUpMsg, helpfulQuestionMsg/)
-  assert.match(generatedQuoteBranch, /label: 'Preguntas frecuentes'[\s\S]*label: 'Hablar con una persona'[\s\S]*MAIN_MENU_REPLY/)
-  assert.doesNotMatch(generatedQuoteBranch, /askIfHelpful: true/)
-})
-
-test('la pregunta de utilidad y sus botones tienen jerarquía visual secundaria', () => {
-  assert.match(messageBubble, /message\.action === 'ASK_IF_HELPFUL'/)
-  assert.match(messageBubble, /isHelpfulPrompt \? '12px' : '14px'/)
-  assert.match(messageBubble, /isHelpfulPrompt \? 'transparent'/)
-  assert.match(messageBubble, /!isHelpfulPrompt && <span/)
-  assert.match(quickReplies, /const helpfulOptions = options\.filter\(isHelpfulOption\)/)
-  assert.match(quickReplies, /justifyContent: 'center'[\s\S]*helpfulOptions\.map\(option => renderOption\(option, true\)\)/)
-  assert.match(quickReplies, /fontSize: compact \? '11px' : '14px'/)
-  assert.match(quickReplies, /justifyContent: 'flex-start'[\s\S]*regularOptions\.map\(option => renderOption\(option\)\)/)
-})
-
-test('la utilidad no bloquea las opciones normales de cada recorrido', () => {
-  assert.match(useChat, /createSelectedFaqResponse[\s\S]*helpfulContinuationReplies:[\s\S]*'SHOW_FAQ_MENU'[\s\S]*MAIN_MENU_REPLY/)
-  assert.match(useChat, /createScheduleResponse[\s\S]*helpfulContinuationReplies: QUICK_REPLIES_INICIAL/)
-  assert.match(useChat, /quickReplies: \[HELPFUL_YES_REPLY, HELPFUL_NO_REPLY, \.\.\.continuationReplies\]/)
-})
-
-test('la pregunta y sus respuestas de utilidad no llaman al backend ni se duplican', () => {
-  assert.match(useChat, /const isHelpfulResponse = quickReply\?\.action === 'HELPFUL_YES' \|\| quickReply\?\.action === 'HELPFUL_NO'/)
-  assert.match(useChat, /isOnline && !isHelpfulResponse \? await ensureConsultation\(\) : null/)
-  assert.match(useChat, /if \(message\.action === 'ASK_IF_HELPFUL'\) return/)
-  assert.match(useChat, /createHelpfulQuestionMessage\(response\.helpfulContinuationReplies\)/)
-  assert.equal((useChat.match(/const HELPFUL_QUESTION =/g) ?? []).length, 1)
-})
-
 test('una sesión nueva conserva el historial pero retira controles incompatibles', () => {
-  assert.match(useChat, /function withoutConversationControls/)
-  assert.match(useChat, /business\.chatSessionChanged[\s\S]*storedMessages\.map\(withoutConversationControls\)/)
-  assert.match(useChat, /previousMessages\.map\(withoutConversationControls\)/)
+  assert.match(useChat, /function createNewSessionMessages[\s\S]*mergeSessionStartMessages\(history, initialMessages\)/)
+  assert.match(useChat, /business\.chatSessionChanged[\s\S]*createNewSessionMessages\(storedMessages, business\)/)
+  assert.match(useChat, /createNewSessionMessages\(previousMessages, business\)/)
   assert.match(useChat, /setAwaitingInput\(null\)[\s\S]*setContactName\(''\)[\s\S]*setIsTyping\(false\)/)
   assert.doesNotMatch(useChat, /chatSessionChanged[\s\S]{0,200}clearChatHistory/)
+})
+
+test('una sesión nueva agrega quick replies nuevas sin duplicar un saludo consecutivo', () => {
+  assert.match(useChat, /const initialMessages = createSessionStartMessages\(business\)/)
+  assert.match(useChat, /mergeSessionStartMessages\(history, initialMessages\)/)
+  assert.match(useChat, /createInitialMessage[\s\S]*quickReplies: QUICK_REPLIES_INICIAL/)
+})
+
+test('la restauración remota no reactiva controles históricos ni pisa un reset', () => {
+  const restoration = useChat.slice(
+    useChat.indexOf('const restorationVersion'),
+    useChat.indexOf('return () =>', useChat.indexOf('const restorationVersion')),
+  )
+  assert.match(restoration, /restorationVersion !== conversationVersionRef\.current/)
+  assert.match(restoration, /createNewSessionMessages\(historicalMessages, business\)/)
+  assert.doesNotMatch(restoration, /quickReplies: QUICK_REPLIES_INICIAL/)
+  assert.match(useChat, /const reset = useCallback[\s\S]*conversationVersionRef\.current \+= 1/)
 })
 
 test('la confirmación de presupuesto usa una acción interna estable', () => {
@@ -136,12 +105,12 @@ test('cancelar limpia el presupuesto pendiente sin llamar al endpoint de creaci�
   assert.doesNotMatch(cancelBranch, /createPublicBudget|updatePublicContact/)
 })
 
-test('un presupuesto creado no ofrece cancelación y continúa con la pregunta de utilidad', () => {
+test('un presupuesto creado no ofrece cancelación y sí permite volver al menú', () => {
   const successBranch = useChat.slice(
     useChat.indexOf('const generatedMsg: Message'),
     useChat.indexOf('} catch {', useChat.indexOf('const generatedMsg: Message')),
   )
-  assert.match(successBranch, /createHelpfulQuestionMessage\(\[/)
+  assert.match(successBranch, /MAIN_MENU_REPLY/)
   assert.doesNotMatch(successBranch, /CANCEL_BUDGET|Cancelar presupuesto/)
 })
 
@@ -168,7 +137,7 @@ test('el texto libre conserva los comandos de menú', () => {
 test('seleccionar una quick reply registra una sola vez el label y no altera el contrato API', () => {
   assert.match(useChat, /const processMessage = useCallback\(async \(text: string, quickReply\?: QuickReplyOption\)/)
   assert.match(useChat, /const userMessage: Message = \{[\s\S]*text,[\s\S]*\}/)
-  assert.match(useChat, /savePublicMessage\(business\.slug, consultationId, 'cliente', text\)/)
+  assert.match(useChat, /persistPublicMessage\(consultationId, 'cliente', text\)/)
   assert.equal((useChat.match(/processMessage\(option\.label, option\)/g) ?? []).length, 1)
   assert.match(publicApi, /body: JSON\.stringify\(\{ emisor, contenido, tipoMensaje: 'texto' \}\)/)
 })

@@ -11,6 +11,7 @@ import type { ProductApi } from '../types'
 import { deleteProductApi, getProductsApi } from '../services/productApi'
 import { openChatPreview } from '../utils/chatRoutes'
 import { filterCatalogProducts, normalizeSearchText } from '../utils/catalogSearch'
+import { getUserFacingErrorMessage } from '../services/apiClient'
 import '../styles/catalog.css'
 
 const PAGE_SIZE = 10
@@ -79,7 +80,7 @@ export function CatalogPage() {
       setProducts(result.productos)
       setTotalPages(Math.max(result.totalPaginas, 1))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No pudimos cargar el catálogo.')
+      setError(getUserFacingErrorMessage(caught, { fallback: 'No pudimos cargar el catálogo. Intentá nuevamente.' }))
     } finally {
       setIsLoading(false)
     }
@@ -114,7 +115,7 @@ export function CatalogPage() {
       setDeleteTarget(null)
       await loadProducts()
     } catch (caught) {
-      setDeleteError(caught instanceof Error ? caught.message : 'No pudimos eliminar el producto.')
+      setDeleteError(getUserFacingErrorMessage(caught, { fallback: 'No pudimos eliminar el producto. Intentá nuevamente.' }))
     } finally {
       setIsDeleting(false)
     }

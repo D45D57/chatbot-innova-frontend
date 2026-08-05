@@ -10,7 +10,7 @@ import { Avatar } from '../components/ui/Avatar'
 import { AppIcon } from '../components/ui/AppIcon'
 import { ConfirmationDialog } from '../components/ui/ConfirmationDialog'
 import { AuthLayout } from '../components/auth/AuthLayout'
-import { apiRequest } from '../services/apiClient'
+import { apiRequest, getUserFacingErrorMessage, UserFacingError } from '../services/apiClient'
 import { brand } from '../styles/brand'
 import { Switch } from '../components/ui/Switch'
 import { useTheme } from '../hooks/useTheme'
@@ -180,7 +180,7 @@ export function BusinessConfigPage() {
     apiRequest<RubrosResponse>('/bot/rubros', { auth: false }).then(data => {
       setRubros(data.rubros)
     }).catch(err => {
-      setError(err instanceof Error ? err.message : 'No se pudieron cargar los rubros.')
+      setError(getUserFacingErrorMessage(err, { fallback: 'No pudimos cargar los rubros. Intentá nuevamente.' }))
     })
   }, [])
 
@@ -206,7 +206,7 @@ export function BusinessConfigPage() {
       setSlugPersonalizado(data.configuracion.slugPersonalizado)
       setPersistedLogo(data.configuracion.logoUrl ?? '')
     }).catch(err => {
-      setError(err instanceof Error ? err.message : 'No se pudo cargar la configuración.')
+      setError(getUserFacingErrorMessage(err, { fallback: 'No pudimos cargar la configuración. Intentá nuevamente.' }))
     })
   }, [user])
 
@@ -383,9 +383,8 @@ export function BusinessConfigPage() {
           })
         } catch (uploadError) {
           if (controller.signal.aborted) {
-            throw new Error('La carga de la imagen tardó demasiado. Intentá nuevamente.', {
-              cause: uploadError,
-            })
+            void uploadError
+            throw new UserFacingError('La carga de la imagen tardó demasiado. Intentá nuevamente.')
           }
           throw uploadError
         } finally {
@@ -397,7 +396,7 @@ export function BusinessConfigPage() {
       const confirmedConfig = confirmedResponse.configuracion
       const syncedBusiness = await loadBusiness(user.id)
       if (!syncedBusiness) {
-        throw new Error('La configuración se guardó, pero no pudo volver a cargarse desde el servidor.')
+        throw new UserFacingError('Guardamos los cambios, pero no pudimos actualizar la información en pantalla. Volvé a intentarlo.')
       }
       const confirmedPrimary = confirmedConfig.colorPrimario ?? DEFAULT_CHAT_APPEARANCE.primary
       const confirmedSecondary = confirmedConfig.colorSecundario ?? DEFAULT_CHAT_APPEARANCE.secondary
@@ -424,7 +423,7 @@ export function BusinessConfigPage() {
       pendingSubmitFormRef.current = null
       setShowSuccessModal(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar en el servidor.')
+      setError(getUserFacingErrorMessage(err, { fallback: 'No pudimos guardar la configuración. Intentá nuevamente.' }))
     } finally {
       setLoading(false)
     }

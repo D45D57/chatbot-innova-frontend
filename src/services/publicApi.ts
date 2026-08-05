@@ -4,6 +4,7 @@ import { mapProductApi } from './productApi'
 import type { Business, FAQ, FAQApi, Product, ProductApi, Rubro } from '../types'
 import { clearTemporaryConversationState } from './chatStorage'
 import { reconcileReturnedSession } from './publicChatSessionStorage'
+import { createPublicChatLifecycleFields } from './publicChatLifecycle'
 
 interface PublicFaqsResponse {
   success: boolean
@@ -47,6 +48,7 @@ interface PublicChatInitResponse {
   data: {
     sessionId?: string
     hasHistory?: boolean
+    lifecycleEvent?: 'SESSION_EXPIRED_INACTIVITY' | null
     consultationId?: string | null
     botData?: PublicBotData
     botId?: string
@@ -115,7 +117,7 @@ export async function getPublicBusinessApi(slug: string): Promise<Business> {
     chatSessionId: data.sessionId,
     chatConsultationId: data.consultationId ?? undefined,
     chatHasHistory: data.hasHistory ?? false,
-    chatSessionChanged: sessionChanged,
+    ...createPublicChatLifecycleFields(data.lifecycleEvent, sessionChanged),
   }
 }
 
