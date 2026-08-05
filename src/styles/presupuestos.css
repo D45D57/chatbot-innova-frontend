@@ -266,6 +266,7 @@
 .budget-actions { margin-top: 16px; display: flex; flex-direction: column; gap: 16px; }
 .budget-actions p, .budget-quote-form > div > p { margin-top: 4px; color: var(--budget-muted); font-size: 12px; }
 .budget-actions__buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.budget-actions__help { flex-basis: 100%; }
 .budget-actions__buttons button.is-danger { background: var(--color-error); }
 .budget-actions__buttons button:disabled, .budget-submit:disabled { opacity: .45; cursor: not-allowed; }
 

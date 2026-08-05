@@ -6,6 +6,7 @@ import { FaqForm } from '../components/faq/FaqForm'
 import { Avatar } from '../components/ui/Avatar'
 import { Button } from '../components/ui/Button'
 import { AppIcon } from '../components/ui/AppIcon'
+import { ConfirmationDialog } from '../components/ui/ConfirmationDialog'
 import { PageBackButton } from '../components/navigation/PageBackButton'
 import { useAuth } from '../context/AuthContext'
 import { useBusiness } from '../context/BusinessContext'
@@ -399,39 +400,33 @@ export function FaqPage() {
         </div>
       )}
 
-      {deleteTarget && (
-        <div className="faq-modal-backdrop">
-          <section className="faq-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-faq-title">
-            <span className="faq-delete-modal__icon"><AppIcon name="trash" size={30} /></span>
-            <h2 id="delete-faq-title">Eliminar pregunta</h2>
-            <p>¿Querés eliminar “{deleteTarget.pregunta}”? Dejará de estar disponible para el chatbot.</p>
-            {error && <div className="faq-form__submit-error" role="alert">{error}</div>}
-            <div>
-              <Button type="button" variant="outline" disabled={Boolean(busyFaqId)} onClick={() => { setDeleteTarget(null); setError('') }}>Cancelar</Button>
-              <Button type="button" loading={Boolean(busyFaqId)} onClick={() => void handleDelete()}>Eliminar</Button>
-            </div>
-          </section>
-        </div>
-      )}
+      <ConfirmationDialog
+        open={Boolean(deleteTarget)}
+        title="¿Eliminar FAQ?"
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        loading={Boolean(busyFaqId)}
+        error={deleteTarget ? error : ''}
+        onOpenChange={open => {
+          if (!open) { setDeleteTarget(null); setError('') }
+        }}
+        onConfirm={() => void handleDelete()}
+      />
 
-      {pendingDiscardAction && (
-        <div className="faq-modal-backdrop">
-          <section className="faq-delete-modal" role="dialog" aria-modal="true" aria-labelledby="discard-faq-title">
-            <span className="faq-delete-modal__icon faq-delete-modal__icon--warning"><AppIcon name="alert" size={30} /></span>
-            <h2 id="discard-faq-title">Cambios sin guardar</h2>
-            <p>Si cerrás ahora, se perderán los cambios de esta pregunta.</p>
-            <div>
-              <Button type="button" variant="outline" onClick={() => setPendingDiscardAction(null)}>Seguir editando</Button>
-              <Button type="button" onClick={() => {
-                const action = pendingDiscardAction
-                setPendingDiscardAction(null)
-                setHasUnsavedFaqChanges(false)
-                action()
-              }}>Descartar cambios</Button>
-            </div>
-          </section>
-        </div>
-      )}
+      <ConfirmationDialog
+        open={Boolean(pendingDiscardAction)}
+        title="¿Salir sin guardar los cambios?"
+        confirmLabel="Salir"
+        cancelLabel="Seguir editando"
+        onOpenChange={open => { if (!open) setPendingDiscardAction(null) }}
+        onConfirm={() => {
+          if (!pendingDiscardAction) return
+          const action = pendingDiscardAction
+          setPendingDiscardAction(null)
+          setHasUnsavedFaqChanges(false)
+          action()
+        }}
+      />
     </div>
   )
 }

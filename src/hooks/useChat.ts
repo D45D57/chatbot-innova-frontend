@@ -17,10 +17,16 @@ export interface OrderItem {
 import {
   clearChatHistory,
   clearChatState,
+  clearTemporaryConversationState,
   loadChatHistory,
   saveAwaitingInput,
   saveChatHistory,
 } from '../services/chatStorage'
+import {
+  clearStoredConsultation,
+  readStoredConsultation,
+  saveStoredConsultation,
+} from '../services/publicChatSessionStorage'
 import {
   createPublicBudget,
   createPublicConsultation,
@@ -50,9 +56,14 @@ interface BotResponse {
   awaitingInput?: AwaitingInput
   products?: Product[]
   faqs?: FAQ[]
+  askIfHelpful?: boolean
+  helpfulContinuationReplies?: QuickReplyOption[]
 }
 
 const CONTINUATION_MESSAGE = '¿Deseas realizar otra consulta?'
+const HELPFUL_QUESTION = '¿Te fue útil?'
+const HELPFUL_YES_REPLY: QuickReplyOption = { id: 'helpful-yes', label: 'Sí', action: 'HELPFUL_YES' }
+const HELPFUL_NO_REPLY: QuickReplyOption = { id: 'helpful-no', label: 'No', action: 'HELPFUL_NO' }
 
 const MENU_COMMANDS = ['menu', 'opciones', 'volver']
 
@@ -119,7 +130,8 @@ function createSelectedFaqResponse(faqId: string | undefined, business: Business
   if (!selectedFaq) return createFaqMenuResponse(business)
   return {
     text: selectedFaq.respuesta,
-    quickReplies: [
+    askIfHelpful: true,
+    helpfulContinuationReplies: [
       { id: 'repeat-faq-menu', label: 'Ver preguntas frecuentes', action: 'SHOW_FAQ_MENU' },
       MAIN_MENU_REPLY,
     ],
@@ -147,6 +159,29 @@ function createCatalogResponse(business: Business): BotResponse {
 function createScheduleResponse(business: Business): BotResponse {
   return {
     text: `🕐 Horario: ${business.horario || 'No especificado'}\n📞 Teléfono: ${business.telefono || 'No especificado'}\n\n${business.descripcion || ''}`,
+    askIfHelpful: true,
+    helpfulContinuationReplies: QUICK_REPLIES_INICIAL,
+  }
+}
+
+function createHelpfulQuestionMessage(continuationReplies: QuickReplyOption[] = []): Message {
+  return {
+    id: crypto.randomUUID(),
+    role: 'bot',
+    text: HELPFUL_QUESTION,
+    timestamp: new Date(),
+    action: 'ASK_IF_HELPFUL',
+    quickReplies: [HELPFUL_YES_REPLY, HELPFUL_NO_REPLY, ...continuationReplies],
+  }
+}
+
+function createHelpfulNoResponse(): BotResponse {
+  return {
+    text: '',
+    quickReplies: [
+      { id: 'helpful-start-human-handoff', label: 'Hablar con una persona', action: 'START_HUMAN_HANDOFF' },
+      MAIN_MENU_REPLY,
+    ],
   }
 }
 
@@ -241,6 +276,12 @@ function generateQuickReplyResponse(option: QuickReplyOption, business: Business
     START_HUMAN_HANDOFF: createHumanHandoffResponse,
     START_BUDGET: createBudgetResponse,
     SELECT_FAQ: () => createSelectedFaqResponse(option.value, business),
+    HELPFUL_YES: createMainMenuResponse,
+    HELPFUL_NO: createHelpfulNoResponse,
+    ASK_IF_HELPFUL: () => ({
+      text: HELPFUL_QUESTION,
+      quickReplies: [HELPFUL_YES_REPLY, HELPFUL_NO_REPLY],
+    }),
   }
 
   if (option.action === 'SEND_TEXT') {
@@ -261,6 +302,10 @@ function createBotMessages(response: BotResponse): Message[] {
     quickReplies: response.quickReplies,
     products: response.products,
     faqs: response.faqs,
+  }
+
+  if (response.askIfHelpful) {
+    return [responseMessage, createHelpfulQuestionMessage(response.helpfulContinuationReplies)]
   }
 
   if (response.awaitingInput || response.quickReplies?.length || response.products?.length || response.faqs?.length) return [responseMessage]
@@ -286,7 +331,25 @@ function createInitialMessage(business: Business): Message {
   }
 }
 
+function withoutConversationControls(message: Message): Message {
+  const { quickReplies, products, faqs, confirmQuote, quoteSummary, ...visualMessage } = message
+  void quickReplies
+  void products
+  void faqs
+  void confirmQuote
+  void quoteSummary
+  return visualMessage
+}
+
 function getInitialHistory(business: Business): Message[] {
+  const storedMessages = loadChatHistory(business.id)
+  if (storedMessages.length > 0) {
+    const initialMessages = business.chatSessionChanged
+      ? storedMessages.map(withoutConversationControls)
+      : storedMessages
+    saveChatHistory(business.id, initialMessages)
+    return initialMessages
+  }
   const initialMessages = [createInitialMessage(business)]
   saveChatHistory(business.id, initialMessages)
   return initialMessages
@@ -325,7 +388,7 @@ export function useChat(business: Business, { isOnline = true, onNetworkError }:
   const conversationVersionRef = useRef(0)
   const consultationPromiseRef = useRef<Promise<string | null> | null>(null)
   const chatSessionIdRef = useRef(business.chatSessionId ?? crypto.randomUUID())
-  const canReuseInitialConsultationRef = useRef(true)
+  const canReuseInitialConsultationRef = useRef(!business.chatSessionChanged)
   const quoteSubmissionRef = useRef<Set<string>>(new Set(
     messages.flatMap(message => (
       message.generatedQuote ? [message.generatedQuote.sourceSummaryMessageId] : []
@@ -341,16 +404,18 @@ export function useChat(business: Business, { isOnline = true, onNetworkError }:
 
   const ensureConsultation = useCallback((): Promise<string | null> => {
     if (!consultationPromiseRef.current) {
-      const storageKey = `emprendebot:consulta:${business.slug}`
-      const storedId = sessionStorage.getItem(storageKey)
+      const activeSessionId = chatSessionIdRef.current
+      const storedId = readStoredConsultation(business.slug, activeSessionId)
       const existingConsultationId = storedId
         ?? (canReuseInitialConsultationRef.current ? business.chatConsultationId : null)
-      if (existingConsultationId) sessionStorage.setItem(storageKey, existingConsultationId)
+      if (existingConsultationId) {
+        saveStoredConsultation(business.slug, activeSessionId, existingConsultationId)
+      }
       consultationPromiseRef.current = existingConsultationId
         ? Promise.resolve(existingConsultationId)
-        : createPublicConsultation(business.slug, chatSessionIdRef.current)
+        : createPublicConsultation(business.slug, activeSessionId)
             .then(async consultationId => {
-              sessionStorage.setItem(storageKey, consultationId)
+              saveStoredConsultation(business.slug, activeSessionId, consultationId)
               await savePublicMessage(business.slug, consultationId, 'bot', createInitialMessage(business).text)
               return consultationId
             })
@@ -411,8 +476,31 @@ export function useChat(business: Business, { isOnline = true, onNetworkError }:
     if (!isOnline) consultationPromiseRef.current = null
   }, [isOnline])
 
+  useEffect(() => {
+    if (!business.chatSessionId || business.chatSessionId === chatSessionIdRef.current) return
+
+    conversationVersionRef.current += 1
+    cancelPendingResponse()
+    chatSessionIdRef.current = business.chatSessionId
+    consultationPromiseRef.current = null
+    canReuseInitialConsultationRef.current = false
+    quoteSubmissionRef.current.clear()
+    pendingQuoteRef.current = null
+    setSubmittingQuoteMessageId(null)
+    setAwaitingInput(null)
+    setContactName('')
+    setIsTyping(false)
+    clearTemporaryConversationState(business.id)
+    setMessages(previousMessages => {
+      const nextMessages = previousMessages.map(withoutConversationControls)
+      saveChatHistory(business.id, nextMessages)
+      return nextMessages
+    })
+  }, [business.chatSessionId, business.id, cancelPendingResponse])
+
   const processMessage = useCallback(async (text: string, quickReply?: QuickReplyOption) => {
     if (isTyping) return
+    const isHelpfulResponse = quickReply?.action === 'HELPFUL_YES' || quickReply?.action === 'HELPFUL_NO'
     const actionValue = quickReply?.action === 'CANCEL_BUDGET'
       ? quickReply.value ?? pendingQuoteRef.current?.sourceSummaryMessageId
       : quickReply?.value
@@ -432,7 +520,7 @@ export function useChat(business: Business, { isOnline = true, onNetworkError }:
     })
     setIsTyping(true)
 
-    const consultationId = isOnline ? await ensureConsultation() : null
+    const consultationId = isOnline && !isHelpfulResponse ? await ensureConsultation() : null
     if (consultationId) {
       await savePublicMessage(business.slug, consultationId, 'cliente', text).catch(() => undefined)
     }
@@ -619,14 +707,14 @@ export function useChat(business: Business, { isOnline = true, onNetworkError }:
           role: 'bot',
           text: `Recibimos tu solicitud. Una persona del negocio se comunicará con vos a la brevedad. ¡Gracias por comunicarte con ${business.nombre}!`,
           timestamp: new Date(),
-          quickReplies: [
-            { id: 'quote-show-faq-menu', label: 'Preguntas frecuentes', action: 'SHOW_FAQ_MENU' },
-            { id: 'quote-start-human-handoff', label: 'Hablar con una persona', action: 'START_HUMAN_HANDOFF' },
-            MAIN_MENU_REPLY,
-          ],
         }
+        const helpfulQuestionMsg = createHelpfulQuestionMessage([
+          { id: 'quote-show-faq-menu', label: 'Preguntas frecuentes', action: 'SHOW_FAQ_MENU' },
+          { id: 'quote-start-human-handoff', label: 'Hablar con una persona', action: 'START_HUMAN_HANDOFF' },
+          MAIN_MENU_REPLY,
+        ])
         setMessages(prev => {
-          const next = [...prev, generatedMsg, followUpMsg]
+          const next = [...prev, generatedMsg, followUpMsg, helpfulQuestionMsg]
           saveChatHistory(business.id, next)
           return next
         })
@@ -769,6 +857,7 @@ export function useChat(business: Business, { isOnline = true, onNetworkError }:
     })
     if (consultationId) {
       botMessages.forEach(message => {
+        if (message.action === 'ASK_IF_HELPFUL') return
         void savePublicMessage(business.slug, consultationId, 'bot', message.text).catch(() => undefined)
       })
     }
@@ -905,7 +994,7 @@ export function useChat(business: Business, { isOnline = true, onNetworkError }:
 
     clearChatHistory(business.id)
     clearChatState(business.id)
-    sessionStorage.removeItem(`emprendebot:consulta:${business.slug}`)
+    clearStoredConsultation(business.slug)
     consultationPromiseRef.current = null
     canReuseInitialConsultationRef.current = false
     chatSessionIdRef.current = crypto.randomUUID()

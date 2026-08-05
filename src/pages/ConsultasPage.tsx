@@ -18,10 +18,14 @@ import '../styles/consultas.css'
 
 const ESTADO_OPTIONS: Array<{ value: ConsultaEstadoFilter; label: string }> = [
   { value: 'todas', label: 'Todas' },
-  { value: 'pendientes_atencion', label: 'Pendientes de atención humana' },
-  { value: 'resuelta_por_bot', label: 'Resueltas automáticamente' },
-  { value: 'cerrada', label: 'Cerradas' },
+  { value: 'nueva', label: 'Nueva' },
+  { value: 'en_proceso', label: 'En seguimiento' },
+  { value: 'resuelta', label: 'Resuelta' },
+  { value: 'cerrada', label: 'Cerrada' },
 ]
+
+// Valores válidos de URL que no se muestran en el dropdown (ej: filtros de acceso rápido desde dashboard)
+const VALID_ESTADO_VALUES: ConsultaEstadoFilter[] = [...ESTADO_OPTIONS.map(o => o.value), 'activas', 'resuelta_bot']
 
 const SORT_OPTIONS: Array<{ value: ConsultaSortOption; label: string }> = [
   { value: 'recentes', label: 'Más recientes' },
@@ -71,21 +75,9 @@ export function ConsultasPage() {
     const sanitizedParams = new URLSearchParams(searchParams)
     sanitizedParams.delete('tipo')
     sanitizedParams.delete('canal')
-
-    const hasBotResolution = sanitizedParams.get('resolucion') === 'bot'
-    const hasHumanAttention = sanitizedParams.get('atencion') === 'humana'
-      && sanitizedParams.get('estado') === 'en_proceso'
-
-    if (hasBotResolution) {
-      sanitizedParams.delete('atencion')
-      sanitizedParams.delete('estado')
-    } else if (hasHumanAttention) {
-      sanitizedParams.delete('resolucion')
-    } else {
-      sanitizedParams.delete('atencion')
-      sanitizedParams.delete('resolucion')
-      if (sanitizedParams.get('estado') !== 'cerrada') sanitizedParams.delete('estado')
-    }
+    sanitizedParams.delete('atencion')
+    sanitizedParams.delete('resolucion')
+    if (!VALID_ESTADO_VALUES.includes(sanitizedParams.get('estado') as ConsultaEstadoFilter)) sanitizedParams.delete('estado')
     if (!isOptionValue(SORT_OPTIONS, sanitizedParams.get('orden'))) sanitizedParams.delete('orden')
 
     if (sanitizedParams.toString() !== searchParams.toString()) {
@@ -94,17 +86,9 @@ export function ConsultasPage() {
     }
 
     const requestedStatus = searchParams.get('estado')
-    const requestedResolution = searchParams.get('resolucion')
-    const requestedAttention = searchParams.get('atencion')
     const requestedSort = searchParams.get('orden')
 
-    if (requestedResolution === 'bot') {
-      setEstadoFilter('resuelta_por_bot')
-    } else if (requestedAttention === 'humana' && requestedStatus === 'en_proceso') {
-      setEstadoFilter('pendientes_atencion')
-    } else {
-      setEstadoFilter(isOptionValue(ESTADO_OPTIONS, requestedStatus) ? requestedStatus : 'todas')
-    }
+    setEstadoFilter(VALID_ESTADO_VALUES.includes(requestedStatus as ConsultaEstadoFilter) ? requestedStatus as ConsultaEstadoFilter : 'todas')
     setSortOption(isOptionValue(SORT_OPTIONS, requestedSort) ? requestedSort : 'recentes')
     setSearchQuery(searchParams.get('buscar') ?? '')
   }, [
@@ -134,14 +118,7 @@ export function ConsultasPage() {
     next.delete('estado')
     next.delete('atencion')
     next.delete('resolucion')
-    if (filter === 'pendientes_atencion') {
-      next.set('atencion', 'humana')
-      next.set('estado', 'en_proceso')
-    } else if (filter === 'resuelta_por_bot') {
-      next.set('resolucion', 'bot')
-    } else if (filter !== 'todas') {
-      next.set('estado', filter)
-    }
+    if (filter !== 'todas') next.set('estado', filter)
     setSearchParams(next)
   }
 
@@ -237,7 +214,7 @@ export function ConsultasPage() {
                   />
                 </label>
                 <label className="consultas-filter">
-                  <span>Filtro</span>
+                  <span>Estado</span>
                   <select value={estadoFilter} onChange={event => handleEstadoFilter(event.target.value as ConsultaEstadoFilter)}>
                     {ESTADO_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
@@ -253,18 +230,6 @@ export function ConsultasPage() {
                   </select>
                 </label>
               </section>
-
-              {estadoFilter === 'pendientes_atencion' && (
-                <div className="consultas-active-filters" aria-label="Filtros activos">
-                  <span>Pendientes de atención humana</span>
-                  <span>En proceso</span>
-                </div>
-              )}
-              {estadoFilter === 'resuelta_por_bot' && (
-                <div className="consultas-active-filters" aria-label="Filtros activos">
-                  <span>Resueltas automáticamente</span>
-                </div>
-              )}
 
               {isShowingDemo && (
                 <aside className="consultas-demo" aria-label="Consultas de ejemplo">

@@ -7,6 +7,7 @@ import {
   updateProductApi,
 } from '../services/productApi'
 import { AppIcon } from '../components/ui/AppIcon'
+import { ConfirmationDialog } from '../components/ui/ConfirmationDialog'
 import '../styles/catalog.css'
 
 interface ProductForm {
@@ -37,7 +38,9 @@ export function ProductFormPage() {
   const isEditing = Boolean(id)
   const initialPriceMode = (location.state as { precioConsultar?: boolean } | null)?.precioConsultar ?? false
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [form, setForm] = useState<ProductForm>({ ...EMPTY_FORM, precioConsultar: initialPriceMode })
+  const initialForm = { ...EMPTY_FORM, precioConsultar: initialPriceMode }
+  const [form, setForm] = useState<ProductForm>(initialForm)
+  const [initialFormSnapshot, setInitialFormSnapshot] = useState(JSON.stringify(initialForm))
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState('')
   const [removeImage, setRemoveImage] = useState(false)
@@ -45,6 +48,7 @@ export function ProductFormPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [formError, setFormError] = useState('')
+  const [showDiscardConfirmation, setShowDiscardConfirmation] = useState(false)
 
   useEffect(() => {
     if (!imageFile) return
@@ -67,14 +71,16 @@ export function ProductFormPage() {
         const product = await getProductByIdApi(id)
         if (!product) throw new Error('El producto no existe o no pertenece a tu catálogo.')
         if (!active) return
-        setForm({
+        const loadedForm = {
           nombre: product.nombre,
           descripcion: product.descripcion ?? '',
           precio: product.requiereCotizacion ? '' : String(Number(product.precio)),
           activo: product.activo,
           precioConsultar: product.requiereCotizacion,
           imagenActual: product.urlImagen ?? '',
-        })
+        }
+        setInitialFormSnapshot(JSON.stringify(loadedForm))
+        setForm(loadedForm)
       } catch (caught) {
         if (active) setLoadError(caught instanceof Error ? caught.message : 'No pudimos cargar el producto.')
       } finally {
@@ -151,6 +157,13 @@ export function ProductFormPage() {
   }
 
   const displayedImage = imagePreview || (!removeImage ? form.imagenActual : '')
+  const hasUnsavedChanges = JSON.stringify(form) !== initialFormSnapshot
+    || Boolean(imageFile)
+    || removeImage
+  const requestExit = () => {
+    if (hasUnsavedChanges) setShowDiscardConfirmation(true)
+    else navigate('/catalogo')
+  }
 
   if (isLoading) {
     return <div className="product-form-page"><div className="product-form-loading" role="status"><i /><span /><span /><span /></div></div>
@@ -174,7 +187,7 @@ export function ProductFormPage() {
       <form onSubmit={handleSave} className="product-form-card">
         <header className="product-form-modal-header">
           <h1>{isEditing ? 'Editar producto' : 'Nuevo producto'}</h1>
-          <button type="button" onClick={() => navigate('/catalogo')} aria-label="Cerrar">
+          <button type="button" onClick={requestExit} aria-label="Cerrar">
             <AppIcon name="close" size={23} />
           </button>
         </header>
@@ -240,10 +253,18 @@ export function ProductFormPage() {
         </section>
 
         <footer className="product-form-actions">
-          <button type="button" className="catalog-secondary-button" disabled={isSubmitting} onClick={() => navigate('/catalogo')}>Cancelar</button>
+          <button type="button" className="catalog-secondary-button" disabled={isSubmitting} onClick={requestExit}>Cancelar</button>
           <button type="submit" className="catalog-primary-button" disabled={!canSave} style={{ background: canSave ? brand.primaryGradient : undefined }}>{isSubmitting ? 'Guardando…' : isEditing ? 'Guardar cambios' : 'Guardar producto'}</button>
         </footer>
       </form>
+      <ConfirmationDialog
+        open={showDiscardConfirmation}
+        title="¿Salir sin guardar los cambios?"
+        confirmLabel="Salir"
+        cancelLabel="Seguir editando"
+        onOpenChange={setShowDiscardConfirmation}
+        onConfirm={() => navigate('/catalogo')}
+      />
     </div>
   )
 }

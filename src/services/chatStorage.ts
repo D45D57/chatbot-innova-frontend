@@ -19,6 +19,9 @@ const QUICK_REPLY_ACTIONS = new Set<QuickReplyOption['action']>([
   'REQUEST_BUDGET',
   'CONFIRM_BUDGET',
   'CANCEL_BUDGET',
+  'ASK_IF_HELPFUL',
+  'HELPFUL_YES',
+  'HELPFUL_NO',
   'SEND_TEXT',
 ])
 
@@ -153,5 +156,14 @@ export function clearChatState(businessId: string): void {
     localStorage.removeItem(getChatStateKey(businessId))
   } catch {
     // El reinicio visual no depende de que localStorage este disponible.
+  }
+}
+
+export function clearTemporaryConversationState(businessId: string): void {
+  clearChatState(businessId)
+  try {
+    sessionStorage.removeItem(`eb_pending_quote:${businessId}`)
+  } catch {
+    // El estado en memoria sigue siendo la fuente activa de la conversación.
   }
 }

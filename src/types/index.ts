@@ -170,6 +170,7 @@ export interface Business {
   chatSessionId?: string
   chatConsultationId?: string
   chatHasHistory?: boolean
+  chatSessionChanged?: boolean
 }
 
 // ===== CHAT =====
@@ -185,6 +186,9 @@ export type QuickReplyAction =
   | 'REQUEST_BUDGET'
   | 'CONFIRM_BUDGET'
   | 'CANCEL_BUDGET'
+  | 'ASK_IF_HELPFUL'
+  | 'HELPFUL_YES'
+  | 'HELPFUL_NO'
   | 'SEND_TEXT'
 
 export interface QuickReplyOption {
@@ -256,7 +260,7 @@ export interface ChatSession {
 }
 
 // ===== CONSULTAS =====
-export type ConsultaEstado = 'nueva' | 'en_proceso' | 'resuelta' | 'cerrada'
+export type ConsultaEstado = 'iniciada' | 'nueva' | 'en_proceso' | 'resuelta' | 'cerrada'
 export type ConsultaCerradaPor = 'bot' | 'emprendedor'
 export type CanalConsulta = 'web' | 'whatsapp'
 export type TipoConsulta = 'general' | 'catalogo' | 'presupuesto' | 'soporte' | 'derivacion'

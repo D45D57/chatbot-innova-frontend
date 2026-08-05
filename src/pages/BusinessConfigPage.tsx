@@ -8,6 +8,7 @@ import { Drawer } from '../components/layout/Drawer'
 import { PageBackButton } from '../components/navigation/PageBackButton'
 import { Avatar } from '../components/ui/Avatar'
 import { AppIcon } from '../components/ui/AppIcon'
+import { ConfirmationDialog } from '../components/ui/ConfirmationDialog'
 import { AuthLayout } from '../components/auth/AuthLayout'
 import { apiRequest } from '../services/apiClient'
 import { brand } from '../styles/brand'
@@ -153,6 +154,9 @@ export function BusinessConfigPage() {
   const [slugPersonalizado, setSlugPersonalizado] = useState<boolean | null>(null)
   const [slugOriginal, setSlugOriginal] = useState(business?.slug ?? '')
   const [persistedLogo, setPersistedLogo] = useState(business?.logo ?? '')
+  const [showSlugConfirmation, setShowSlugConfirmation] = useState(false)
+  const pendingSubmitFormRef = useRef<HTMLFormElement | null>(null)
+  const slugConfirmationAcceptedRef = useRef(false)
 
   const publicUrl = form.slug ? getPublicChatUrl(form.slug, window.location.origin) : ''
 
@@ -284,7 +288,7 @@ export function BusinessConfigPage() {
     })
   }
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError('')
 
@@ -328,11 +332,12 @@ export function BusinessConfigPage() {
       setError('El enlace público ya fue personalizado y no puede volver a modificarse.')
       return
     }
-    if (slugCambio && !window.confirm(
-      `¿Confirmás el enlace ${getPublicChatUrl(form.slug, window.location.origin)}? Solo podés personalizarlo una vez y después no podrá modificarse.`
-    )) {
+    if (slugCambio && !slugConfirmationAcceptedRef.current) {
+      pendingSubmitFormRef.current = e.currentTarget
+      setShowSlugConfirmation(true)
       return
     }
+    slugConfirmationAcceptedRef.current = false
 
     setLoading(true)
 
@@ -415,6 +420,8 @@ export function BusinessConfigPage() {
       setSelectedLogo(null)
       setLogoValidationError('')
       if (fileInputRef.current) fileInputRef.current.value = ''
+      setShowSlugConfirmation(false)
+      pendingSubmitFormRef.current = null
       setShowSuccessModal(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar en el servidor.')
@@ -537,7 +544,7 @@ export function BusinessConfigPage() {
             type="submit"
             fullWidth
             size="lg"
-            loading={loading}
+        loading={loading}
             style={{ background: brand.primaryGradient, borderRadius: 'var(--radius-md)', border: 'none', marginTop: '4px' }}
           >
             Crear negocio
@@ -612,6 +619,23 @@ export function BusinessConfigPage() {
           </div>
         </div>
       )}
+
+      <ConfirmationDialog
+        open={showSlugConfirmation}
+        title="¿Confirmar enlace público?"
+        description="Este enlace no podrá volver a modificarse."
+        confirmLabel="Confirmar"
+        cancelLabel="Cancelar"
+        loading={loading}
+        onOpenChange={open => {
+          setShowSlugConfirmation(open)
+          if (!open) pendingSubmitFormRef.current = null
+        }}
+        onConfirm={() => {
+          slugConfirmationAcceptedRef.current = true
+          pendingSubmitFormRef.current?.requestSubmit()
+        }}
+      />
 
       {/* Header — distinto según modo */}
       {isEdit ? (

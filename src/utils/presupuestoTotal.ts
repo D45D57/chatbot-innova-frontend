@@ -21,3 +21,12 @@ export const getEffectivePresupuestoTotal = (
 
   return computedTotal > 0 ? computedTotal : 0
 }
+
+export const isPresupuestoReadyToSend = (
+  presupuesto: Pick<Presupuesto, 'total' | 'items'>,
+): boolean => presupuesto.items.length > 0
+  && presupuesto.items.every(item => (
+    toValidAmount(item.precioUnitario) > 0
+    && toValidAmount(item.subtotal) > 0
+  ))
+  && getEffectivePresupuestoTotal(presupuesto) > 0
