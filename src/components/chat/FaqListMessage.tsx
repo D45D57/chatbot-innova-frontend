@@ -2,7 +2,7 @@ import type { FAQ } from '../../types'
 
 interface FaqListMessageProps {
   faqs: FAQ[]
-  onSelect: (question: string) => void
+  onSelect: (faq: FAQ) => void
 }
 
 export function FaqListMessage({ faqs, onSelect }: FaqListMessageProps) {
@@ -11,7 +11,7 @@ export function FaqListMessage({ faqs, onSelect }: FaqListMessageProps) {
       {faqs.map(faq => (
         <button
           key={faq.id}
-          onClick={() => onSelect(faq.pregunta)}
+          onClick={() => onSelect(faq)}
           style={{
             display: 'flex',
             alignItems: 'center',

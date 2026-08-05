@@ -30,6 +30,55 @@ export interface Product {
   descripcion?: string
   imagen?: string
   disponible: boolean
+  stock?: number
+}
+
+export interface ProductApi {
+  id: string
+  botId: string
+  nombre: string
+  descripcion: string | null
+  precio: number | string
+  stock: number
+  urlImagen: string | null
+  activo: boolean
+  requiereCotizacion: boolean
+  fechaCreacion: string
+  fechaActualizacion: string
+}
+
+export interface ProductFilters {
+  page?: number
+  limit?: number
+  buscar?: string
+  activo?: boolean
+}
+
+export interface ProductPage {
+  productos: ProductApi[]
+  total: number
+  page: number
+  limit: number
+  totalPaginas: number
+}
+
+export interface CreateProductPayload {
+  nombre: string
+  descripcion?: string
+  precio?: number
+  activo: boolean
+  requiereCotizacion: boolean
+  imagen?: File
+}
+
+export interface UpdateProductPayload {
+  nombre?: string
+  descripcion?: string | null
+  precio?: number
+  activo?: boolean
+  requiereCotizacion?: boolean
+  urlImagen?: string | null
+  imagen?: File
 }
 
 export interface FAQ {
@@ -39,9 +88,6 @@ export interface FAQ {
   pregunta: string
   respuesta: string
   categoria?: string
-  activa: boolean
-  orden?: number
-  sourceSuggestionId?: string
   createdAt: string
   updatedAt: string
 }
@@ -52,8 +98,15 @@ export interface FAQFormData {
   categoriaId?: string
   categoria?: string
   nuevaCategoriaNombre?: string
-  activa: boolean
-  sourceSuggestionId?: string
+}
+
+export interface FAQSuggestion {
+  id: string
+  pregunta: string
+  respuesta: string
+  categoria: {
+    nombre: string
+  }
 }
 
 export interface FAQCategory {
@@ -68,7 +121,6 @@ export interface FAQApi {
   categoriaId: string
   pregunta: string
   respuesta: string
-  activa?: boolean
   fechaCreacion: string
   fechaModificacion: string
   categoria?: {
@@ -88,14 +140,12 @@ export interface CreateFAQPayload {
   categoriaId: string
   pregunta: string
   respuesta: string
-  activa?: boolean
 }
 
 export interface UpdateFAQPayload {
   categoriaId?: string
   pregunta?: string
   respuesta?: string
-  activa?: boolean
 }
 
 export interface Business {
@@ -109,24 +159,94 @@ export interface Business {
   mensajeBienvenida: string
   respuestaDerivacion: string
   rubro: Rubro | ''
+  rubroId?: string
+  rubroNombre?: string
   productos: Product[]
   faqCategories?: FAQCategory[]
   faq: FAQ[]
   slug: string
+  colorPrimario?: string
+  colorSecundario?: string
+  chatSessionId?: string
+  chatConsultationId?: string
+  chatHasHistory?: boolean
 }
 
 // ===== CHAT =====
 export type MessageRole = 'bot' | 'user'
-export type AwaitingInput = 'budget' | 'faq-selection' | 'contact-name' | 'contact-phone'
+export type QuickReplyAction =
+  | 'SHOW_MAIN_MENU'
+  | 'SHOW_FAQ_MENU'
+  | 'SHOW_CATALOG'
+  | 'SHOW_SCHEDULE'
+  | 'START_HUMAN_HANDOFF'
+  | 'START_BUDGET'
+  | 'SELECT_FAQ'
+  | 'REQUEST_BUDGET'
+  | 'CONFIRM_BUDGET'
+  | 'CANCEL_BUDGET'
+  | 'SEND_TEXT'
+
+export interface QuickReplyOption {
+  id: string
+  label: string
+  action: QuickReplyAction
+  value?: string
+}
+
+export type AwaitingInput =
+  | 'budget'
+  | 'faq-selection'
+  | 'contact-name'
+  | 'contact-phone'
+  | 'quote-contact-name'
+  | 'quote-contact-phone'
+  | 'quote-confirm'
+
+export interface QuoteSummaryItem {
+  productId: string
+  name: string
+  quantity: number
+  requiresQuote: boolean
+  unitPrice?: number
+  subtotal?: number
+}
+
+export interface QuoteSummaryMessageData {
+  items: QuoteSummaryItem[]
+  subtotal: number
+}
+
+export interface GeneratedQuoteMessageData {
+  requestRegistered: true
+  sourceSummaryMessageId: string
+  pdfUrl?: string
+  quoteId?: string
+  number?: string
+  status?: import('./presupuesto').PresupuestoEstado
+  issuedAt?: string
+  expiresAt?: string
+  customer?: {
+    name?: string
+    phone?: string
+  }
+  items?: QuoteSummaryItem[]
+  total?: number
+}
 
 export interface Message {
   id: string
   role: MessageRole
   text: string
   timestamp: Date
-  quickReplies?: string[]
+  action?: QuickReplyAction
+  actionValue?: string
+  quickReplies?: QuickReplyOption[]
+  confirmQuote?: boolean
   products?: Product[]
   faqs?: FAQ[]
+  quoteSummary?: QuoteSummaryMessageData
+  generatedQuote?: GeneratedQuoteMessageData
 }
 
 export interface ChatSession {
@@ -136,7 +256,7 @@ export interface ChatSession {
 }
 
 // ===== CONSULTAS =====
-export type ConsultaEstado = 'nueva' | 'en_proceso' | 'cerrada'
+export type ConsultaEstado = 'iniciada' | 'nueva' | 'en_proceso' | 'resuelta' | 'cerrada'
 export type ConsultaCerradaPor = 'bot' | 'emprendedor'
 export type CanalConsulta = 'web' | 'whatsapp'
 export type TipoConsulta = 'general' | 'catalogo' | 'presupuesto' | 'soporte' | 'derivacion'

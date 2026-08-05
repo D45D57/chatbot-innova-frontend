@@ -1,64 +1,41 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Drawer } from '../components/layout/Drawer'
 import { FaqCard } from '../components/faq/FaqCard'
 import { FaqForm } from '../components/faq/FaqForm'
 import { Avatar } from '../components/ui/Avatar'
 import { Button } from '../components/ui/Button'
 import { AppIcon } from '../components/ui/AppIcon'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { PageBackButton } from '../components/navigation/PageBackButton'
 import { useAuth } from '../context/AuthContext'
 import { useBusiness } from '../context/BusinessContext'
-import { useFaqs, type FAQSortOption, type FAQStatusFilter } from '../hooks/useFaqs'
-import type { FAQ, FAQFormData } from '../types'
-import { brand } from '../styles/brand'
-import {
-  getFaqSuggestions,
-  mapSuggestionToFaqFormData,
-  type FAQSuggestion,
-} from '../services/faqSuggestions'
-
-const FAQ_PRIMARY = brand.primary
-const FAQ_TEXT = brand.text
-const FAQ_MUTED = brand.muted
-const FAQ_BORDER = brand.border
-const FAQ_CARD_SHADOW = brand.shadowCard
+import { useFaqs, type FAQSortOption } from '../hooks/useFaqs'
+import type { FAQ, FAQFormData, FAQSuggestion } from '../types'
+import { DUPLICATE_FAQ_MESSAGE, normalizeFaqQuestion } from '../utils/normalizeFaqQuestion'
+import { openChatPreview } from '../utils/chatRoutes'
+import { getFaqSuggestionsApi } from '../services/faqApi'
+import '../styles/faq.css'
 
 export function FaqPage() {
   const navigate = useNavigate()
-  const location = useLocation()
   const { user } = useAuth()
-  const {
-    business,
-    isBusinessLoading,
-    loadBusiness,
-    createFaq: createLocalFaq,
-    updateFaq: updateLocalFaq,
-    deleteFaq: deleteLocalFaq,
-    toggleFaq: toggleLocalFaq,
-  } = useBusiness()
+  const { business, isBusinessLoading, loadBusiness } = useBusiness()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editingFaq, setEditingFaq] = useState<FAQ | null>(null)
-  const [statusFilter] = useState<FAQStatusFilter>('all')
+  const [deleteTarget, setDeleteTarget] = useState<FAQ | null>(null)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [suggestions, setSuggestions] = useState<FAQSuggestion[] | null>(null)
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [suggestionsError, setSuggestionsError] = useState('')
+  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([])
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [sortOption] = useState<FAQSortOption>('created-desc')
+  const [sortOption, setSortOption] = useState<FAQSortOption>('created-desc')
   const [formLoading, setFormLoading] = useState(false)
   const [busyFaqId, setBusyFaqId] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const [suggestions, setSuggestions] = useState<FAQSuggestion[]>([])
-  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([])
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [hasUnsavedFaqChanges, setHasUnsavedFaqChanges] = useState(false)
   const [pendingDiscardAction, setPendingDiscardAction] = useState<(() => void) | null>(null)
-  const localFaqSource = useMemo(() => ({
-    business,
-    createFaq: createLocalFaq,
-    updateFaq: updateLocalFaq,
-    deleteFaq: deleteLocalFaq,
-    toggleFaq: toggleLocalFaq,
-  }), [business, createLocalFaq, deleteLocalFaq, toggleLocalFaq, updateLocalFaq])
-
   const {
     faqs,
     allFaqs,
@@ -66,36 +43,15 @@ export function FaqPage() {
     isLoading: isFaqLoading,
     error: faqLoadError,
     createFaq,
+    createFromSuggestions,
     updateFaq,
     deleteFaq,
-    toggleFaq,
-  } = useFaqs({ status: statusFilter, category: categoryFilter, sort: sortOption }, localFaqSource)
-  const addedSuggestionIds = useMemo(
-    () => new Set(allFaqs.map(faq => faq.sourceSuggestionId).filter(Boolean)),
-    [allFaqs],
-  )
-  const availableSuggestions = useMemo(
-    () => suggestions.filter(suggestion => !addedSuggestionIds.has(suggestion.id)),
-    [addedSuggestionIds, suggestions],
-  )
+    reload,
+  } = useFaqs({ category: categoryFilter, sort: sortOption })
 
   useEffect(() => {
-    if (user) loadBusiness(user.id)
+    if (user) void loadBusiness(user.id)
   }, [loadBusiness, user])
-
-  useEffect(() => {
-    if (!location.state?.resetFaqView) return
-
-    setShowForm(false)
-    setEditingFaq(null)
-    setShowSuggestions(false)
-    setSelectedSuggestionIds([])
-    setHasUnsavedFaqChanges(false)
-    setPendingDiscardAction(null)
-    setError('')
-    setFormLoading(false)
-    setBusyFaqId(null)
-  }, [location.state])
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -103,733 +59,379 @@ export function FaqPage() {
       event.preventDefault()
       event.returnValue = ''
     }
-
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [hasUnsavedFaqChanges])
+
+  const availableSuggestions = useMemo(() => {
+    const existingQuestions = new Set(allFaqs.map(faq => normalizeFaqQuestion(faq.pregunta)))
+    return (suggestions ?? []).filter(
+      suggestion => !existingQuestions.has(normalizeFaqQuestion(suggestion.pregunta)),
+    )
+  }, [allFaqs, suggestions])
+
+  const hasFilters = categoryFilter !== 'all' || sortOption !== 'created-desc'
+  const isLoading = isBusinessLoading || isFaqLoading
 
   const runWithUnsavedCheck = (action: () => void) => {
     if (!hasUnsavedFaqChanges) {
       action()
       return
     }
-
     setPendingDiscardAction(() => action)
   }
 
-  const discardPendingChanges = () => {
-    setHasUnsavedFaqChanges(false)
-    const action = pendingDiscardAction
-    setPendingDiscardAction(null)
-    action?.()
-  }
-
-  const handleGlobalBack = () => {
-    navigate('/dashboard')
-  }
-
-  const handleInternalBack = () => {
-    if (showSuggestions) {
-      closeSuggestions()
-      return
-    }
-
-    if (showForm) {
-      closeForm()
-      return
-    }
-  }
-
-  const openSuggestions = async () => {
-    if (showForm && hasUnsavedFaqChanges) {
-      runWithUnsavedCheck(() => {
-        setShowForm(false)
-        setEditingFaq(null)
-        setHasUnsavedFaqChanges(false)
-        setError('')
-        setShowSuggestions(true)
-        setSelectedSuggestionIds(current => current.filter(id => !addedSuggestionIds.has(id)))
-        if (suggestions.length === 0) {
-          setSuggestionsLoading(true)
-          getFaqSuggestions()
-            .then(setSuggestions)
-            .catch(suggestionsError => {
-              setError(suggestionsError instanceof Error ? suggestionsError.message : 'No pudimos cargar las preguntas sugeridas.')
-            })
-            .finally(() => setSuggestionsLoading(false))
-        }
-      })
-      return
-    }
-
+  const closeForm = () => {
     setShowForm(false)
     setEditingFaq(null)
     setHasUnsavedFaqChanges(false)
     setError('')
+  }
+
+  const requestCloseForm = () => runWithUnsavedCheck(closeForm)
+
+  const openCreateForm = () => {
+    setShowSuggestions(false)
+    setEditingFaq(null)
+    setHasUnsavedFaqChanges(false)
+    setError('')
+    setShowForm(true)
+  }
+
+  const openSuggestions = async () => {
+    if (suggestionsLoading) return
+    setSelectedSuggestionIds([])
+    setError('')
+    setSuggestionsError('')
     setShowSuggestions(true)
-    setSelectedSuggestionIds(current => current.filter(id => !addedSuggestionIds.has(id)))
-
-    if (suggestions.length > 0) return
-
     setSuggestionsLoading(true)
     try {
-      setSuggestions(await getFaqSuggestions())
-    } catch (suggestionsError) {
-      setError(suggestionsError instanceof Error ? suggestionsError.message : 'No pudimos cargar las preguntas sugeridas.')
+      setSuggestions(await getFaqSuggestionsApi())
+    } catch (caught) {
+      setSuggestions(null)
+      setSuggestionsError(caught instanceof Error ? caught.message : 'No pudimos cargar las preguntas sugeridas.')
     } finally {
       setSuggestionsLoading(false)
     }
   }
 
-  const closeSuggestions = () => {
-    setShowSuggestions(false)
-    setSelectedSuggestionIds([])
-  }
-
-  const closeForm = () => {
-    if (hasUnsavedFaqChanges) {
-      runWithUnsavedCheck(() => {
-        setShowForm(false)
-        setEditingFaq(null)
-        setHasUnsavedFaqChanges(false)
-        setError('')
-      })
-      return
+  const handleAddSuggestions = async () => {
+    if (formLoading || selectedSuggestionIds.length === 0) return
+    setFormLoading(true)
+    setError('')
+    try {
+      await createFromSuggestions(selectedSuggestionIds)
+      setSelectedSuggestionIds([])
+      setShowSuggestions(false)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No pudimos agregar las preguntas seleccionadas.')
+    } finally {
+      setFormLoading(false)
     }
-
-    setShowForm(false)
-    setEditingFaq(null)
-    setHasUnsavedFaqChanges(false)
-    setError('')
-  }
-
-  const closeFormAfterSave = () => {
-    setShowForm(false)
-    setEditingFaq(null)
-    setHasUnsavedFaqChanges(false)
-    setError('')
-  }
-
-  const openCreateForm = () => {
-    if (showForm && hasUnsavedFaqChanges) {
-      runWithUnsavedCheck(() => {
-        setShowSuggestions(false)
-        setEditingFaq(null)
-        setHasUnsavedFaqChanges(false)
-        setShowForm(true)
-        setError('')
-      })
-      return
-    }
-
-    setShowSuggestions(false)
-    setEditingFaq(null)
-    setHasUnsavedFaqChanges(false)
-    setShowForm(true)
-    setError('')
   }
 
   const openEditForm = (faq: FAQ) => {
-    if (showForm && hasUnsavedFaqChanges) {
-      runWithUnsavedCheck(() => {
-        setEditingFaq(faq)
-        setHasUnsavedFaqChanges(false)
-        setShowForm(true)
-        setError('')
-        window.scrollTo({ top: 0, behavior: 'smooth' })
-      })
-      return
-    }
-
     setEditingFaq(faq)
     setHasUnsavedFaqChanges(false)
+    setError('')
     setShowForm(true)
-    setError('')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  const toggleSuggestion = (suggestionId: string) => {
-    setSelectedSuggestionIds(current =>
-      current.includes(suggestionId)
-        ? current.filter(id => id !== suggestionId)
-        : [...current, suggestionId],
-    )
-  }
-
-  const handleAddSelectedSuggestions = async () => {
-    if (formLoading) return
-
-    if (selectedSuggestionIds.length === 0) {
-      setError('Selecciona al menos una pregunta sugerida para agregar.')
-      return
-    }
-
-    setFormLoading(true)
-    setError('')
-    try {
-      const selectedIds = new Set(selectedSuggestionIds)
-      const selectedSuggestions = availableSuggestions.filter(suggestion => selectedIds.has(suggestion.id))
-      for (const suggestion of selectedSuggestions) {
-        await createFaq(mapSuggestionToFaqFormData(suggestion))
-      }
-      closeSuggestions()
-    } catch (suggestionError) {
-      setError(suggestionError instanceof Error ? suggestionError.message : 'No pudimos agregar las preguntas sugeridas.')
-    } finally {
-      setFormLoading(false)
-    }
   }
 
   const handleSubmit = async (data: FAQFormData) => {
+    if (formLoading) return
+    const normalizedQuestion = normalizeFaqQuestion(data.pregunta)
+    const duplicate = allFaqs.some(faq => faq.id !== editingFaq?.id && normalizeFaqQuestion(faq.pregunta) === normalizedQuestion)
+    if (duplicate) {
+      setError(DUPLICATE_FAQ_MESSAGE)
+      return
+    }
+
     setFormLoading(true)
     setError('')
     try {
-      if (editingFaq) {
-        const selectedCategoryWillDisappear = categoryFilter !== 'all'
-          && editingFaq.categoriaId === categoryFilter
-          && !allFaqs.some(faq => faq.id !== editingFaq.id && faq.categoriaId === categoryFilter)
-        const updatedFaq = await updateFaq(editingFaq.id, data)
-        if (selectedCategoryWillDisappear && updatedFaq.categoriaId !== categoryFilter) {
-          setCategoryFilter('all')
-        }
-      } else {
-        await createFaq(data)
-      }
-      closeFormAfterSave()
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'No pudimos guardar la FAQ.')
+      if (editingFaq) await updateFaq(editingFaq.id, data)
+      else await createFaq(data)
+      closeForm()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No pudimos guardar la pregunta frecuente.')
     } finally {
       setFormLoading(false)
     }
   }
 
-  const handleDelete = async (faqId: string) => {
-    setBusyFaqId(faqId)
+  const handleDelete = async () => {
+    if (!deleteTarget || busyFaqId) return
+    setBusyFaqId(deleteTarget.id)
     setError('')
     try {
-      const selectedCategoryWillDisappear = categoryFilter !== 'all'
-        && allFaqs.some(faq => faq.id === faqId && faq.categoriaId === categoryFilter)
-        && !allFaqs.some(faq => faq.id !== faqId && faq.categoriaId === categoryFilter)
-      await deleteFaq(faqId)
-      if (selectedCategoryWillDisappear) setCategoryFilter('all')
-      if (editingFaq?.id === faqId) closeFormAfterSave()
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'No pudimos eliminar la FAQ.')
+      await deleteFaq(deleteTarget.id)
+      setDeleteTarget(null)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No pudimos eliminar la pregunta frecuente.')
     } finally {
       setBusyFaqId(null)
     }
   }
 
-  const handleToggle = async (faqId: string) => {
-    setBusyFaqId(faqId)
-    setError('')
-    try {
-      await toggleFaq(faqId)
-    } catch (toggleError) {
-      setError(toggleError instanceof Error ? toggleError.message : 'No pudimos cambiar el estado de la FAQ.')
-    } finally {
-      setBusyFaqId(null)
-    }
+  const clearFilters = () => {
+    setCategoryFilter('all')
+    setSortOption('created-desc')
   }
+
+  useEffect(() => {
+    if (!showForm && !showSuggestions && !deleteTarget && !pendingDiscardAction) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (pendingDiscardAction) setPendingDiscardAction(null)
+      else if (deleteTarget && !busyFaqId) setDeleteTarget(null)
+      else if (showForm && !formLoading) requestCloseForm()
+      else if (showSuggestions && !formLoading) setShowSuggestions(false)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  })
 
   if (!user) return null
 
-  const showingFaqIntro = !showForm && !showSuggestions && allFaqs.length === 0
-
   return (
-    <>
+    <div className="faq-page">
       <Drawer
         business={business}
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         activeItem="faq"
+        desktopPersistent
+        showBusinessAvatar
       />
 
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100svh',
-        background: 'var(--color-bg)',
-      }}>
-        <header style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '16px 20px',
-          background: 'var(--color-bg)',
-          borderBottom: '1px solid var(--color-border)',
-          position: 'sticky',
-          top: 0,
-          zIndex: 10,
-        }}>
-          <button
-            type="button"
-            aria-label="Abrir navegacion"
-            onClick={() => runWithUnsavedCheck(() => {
-              setHasUnsavedFaqChanges(false)
-              setShowForm(false)
-              setEditingFaq(null)
-              setDrawerOpen(true)
-            })}
-            style={{
-              width: 32,
-              height: 32,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: FAQ_TEXT,
-              background: 'transparent',
-            }}
-          >
-            <AppIcon name="menu" size={21} strokeWidth={2.2} />
+      <div className="faq-shell">
+        <header className="faq-mobile-header">
+          <button type="button" aria-label="Abrir navegación" onClick={() => setDrawerOpen(true)}>
+            <AppIcon name="menu" size={22} />
           </button>
-          <span style={{ fontWeight: 700, fontSize: '15px', color: FAQ_PRIMARY }}>
-            EmprendeBot
-          </span>
-          <Avatar name={user.nombre} size={32} bgColor={brand.primaryGradient} />
+          <strong>Preguntas frecuentes</strong>
+          <Avatar name={user.nombre} src={business?.logo} size={38} />
         </header>
 
-        <main style={{
-          flex: 1,
-          padding: '18px 20px 28px',
-          overflowY: 'auto',
-          background: showingFaqIntro ? 'var(--color-bg-subtle)' : 'var(--color-bg)',
-        }}>
-          <>
-            <button
-              type="button"
-              onClick={showForm || showSuggestions ? handleInternalBack : handleGlobalBack}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                marginBottom: showForm || showSuggestions ? '22px' : '12px',
-                padding: 0,
-                background: 'transparent',
-                border: 'none',
-                color: FAQ_TEXT,
-                fontSize: '12px',
-                fontWeight: 700,
-                fontFamily: 'var(--font-family)',
-                cursor: 'pointer',
-              }}
-            >
-              <span
-                aria-hidden="true"
-                style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
-                  background: 'var(--color-surface-muted)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: FAQ_TEXT,
-                  fontSize: '14px',
-                  lineHeight: 1,
-                }}
-              >
-                {'<'}
-              </span>
-              Volver
-            </button>
-          </>
-
-          <div style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: '12px',
-            marginBottom: '12px',
-          }}>
+        <main className="faq-main">
+          <PageBackButton onClick={() => navigate('/dashboard')} />
+          <section className="faq-heading">
             <div>
-              <h1 style={{ fontSize: '20px', fontWeight: 800, marginBottom: '6px', color: FAQ_TEXT, lineHeight: 1.15 }}>
-                Preguntas frecuentes
-              </h1>
-              <p style={{ color: FAQ_MUTED, fontSize: '12px', lineHeight: 1.35 }}>
-                {allFaqs.length > 0
-                  ? `${allFaqs.length} ${allFaqs.length === 1 ? 'pregunta agregada' : 'preguntas agregadas'}`
-                  : 'Administra las respuestas automaticas de tu negocio.'}
-              </p>
+              <span className="faq-eyebrow">RESPUESTAS</span>
+              <h1>Preguntas frecuentes</h1>
+              <p>Gestioná las respuestas automáticas para las consultas más habituales de tus clientes.</p>
+              {!isLoading && allFaqs.length > 0 && (
+                <small>{allFaqs.length} pregunta{allFaqs.length === 1 ? '' : 's'} configurada{allFaqs.length === 1 ? '' : 's'}</small>
+              )}
             </div>
-            {!showForm && !showSuggestions && allFaqs.length > 0 && (
-              <Button
-                type="button"
-                size="sm"
-                onClick={openCreateForm}
-                style={{
-                  flexShrink: 0,
-                  height: '32px',
-                  padding: '0 12px',
-                  borderRadius: '8px',
-                  background: brand.primaryGradient,
-                  border: 'none',
-                  boxShadow: brand.shadowAction,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0,
-                  fontSize: '10px',
-                  fontWeight: 800,
-                }}
-              >
-                <AppIcon name="plus" size={12} strokeWidth={2.5} />
-                Crear nueva
+            {!isLoading && !faqLoadError && allFaqs.length > 0 && (
+              <Button type="button" onClick={openCreateForm}>
+                <AppIcon name="plus" size={18} />
+                Nueva pregunta
               </Button>
             )}
-          </div>
+          </section>
 
-          {isBusinessLoading || isFaqLoading ? (
-            <section style={{
-              padding: '28px 20px',
-              textAlign: 'center',
-              color: 'var(--color-text-secondary)',
-              fontSize: '13px',
-            }}>
-              Cargando preguntas frecuentes...
+          {!isLoading && allFaqs.length > 0 && (
+            <section className="faq-toolbar" aria-label="Filtrar preguntas frecuentes">
+              <label className="faq-filter">
+                <span>Categoría</span>
+                <select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}>
+                  <option value="all">Todas</option>
+                  {categories.map(category => <option key={category.id} value={category.id}>{category.nombre}</option>)}
+                </select>
+              </label>
+              <label className="faq-filter">
+                <span>Orden</span>
+                <select value={sortOption} onChange={event => setSortOption(event.target.value as FAQSortOption)}>
+                  <option value="created-desc">Más recientes</option>
+                  <option value="created-asc">Más antiguas</option>
+                  <option value="alpha-asc">A–Z</option>
+                  <option value="alpha-desc">Z–A</option>
+                </select>
+              </label>
+            </section>
+          )}
+
+          {error && !showForm && (
+            <div className="faq-alert" role="alert"><AppIcon name="alert" size={18} /><span>{error}</span></div>
+          )}
+
+          {isLoading ? (
+            <section className="faq-list" aria-label="Cargando preguntas frecuentes" aria-busy="true">
+              {[0, 1, 2].map(item => <div className="faq-skeleton" key={item}><i /><span /><small /></div>)}
+            </section>
+          ) : faqLoadError ? (
+            <section className="faq-state-card faq-state-card--error" role="alert">
+              <span className="faq-state-card__icon"><AppIcon name="alert" size={38} /></span>
+              <h2>No pudimos cargar tus preguntas</h2>
+              <p>{faqLoadError}</p>
+              <Button type="button" onClick={() => void reload()}>Reintentar</Button>
+            </section>
+          ) : allFaqs.length === 0 ? (
+            <section className="faq-state-card">
+              <span className="faq-state-card__icon"><AppIcon name="faq" size={42} /></span>
+              <h2>Todavía no tenés preguntas frecuentes cargadas</h2>
+              <p>Agregá tu primera pregunta para comenzar a responder consultas automáticamente.</p>
+              <Button type="button" onClick={() => void openSuggestions()}><AppIcon name="plus" size={18} />Comenzar</Button>
+            </section>
+          ) : faqs.length === 0 ? (
+            <section className="faq-state-card faq-state-card--compact">
+              <span className="faq-state-card__icon"><AppIcon name="faq" size={38} /></span>
+              <h2>No hay preguntas en esta categoría</h2>
+              <p>Elegí otra categoría o restablecé los filtros.</p>
+              <Button type="button" variant="outline" onClick={clearFilters}>Limpiar filtros</Button>
             </section>
           ) : (
-            <>
-                  {showForm && (
-                <div style={{ marginBottom: '18px' }}>
-                  <FaqForm
-                    key={editingFaq?.id ?? 'new-faq'}
-                    faq={editingFaq ?? undefined}
-                    categories={categories}
-                    loading={formLoading}
-                    onSubmit={handleSubmit}
-                    onCancel={closeForm}
-                    onDirtyChange={setHasUnsavedFaqChanges}
-                  />
-                </div>
-              )}
-
-              {(error || faqLoadError) && (
-                <div
-                  role="alert"
-                  style={{
-                    marginBottom: '14px',
-                    padding: '10px 12px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'rgba(239, 68, 68, 0.08)',
-                    color: 'var(--color-error)',
-                    fontSize: '13px',
-                  }}
-                >
-                  {error || faqLoadError}
-                </div>
-              )}
-
-              {showSuggestions && (
-                <section style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '10px',
-                  marginBottom: '18px',
-                }}>
-                  <div style={{
-                    padding: 0,
-                    background: 'transparent',
-                    border: 'none',
-                    borderRadius: 0,
-                    boxShadow: 'none',
-                  }}>
-                    <h2 style={{ fontSize: '19px', fontWeight: 800, marginBottom: '7px', color: FAQ_TEXT, lineHeight: 1.15 }}>
-                      Agrega tus primeras preguntas frecuentes
-                    </h2>
-                    <p style={{ color: FAQ_MUTED, fontSize: '11px', lineHeight: 1.45, maxWidth: '280px' }}>
-                      Elegi algunas de estas preguntas sugeridas para comenzar. Podras editarlas mas adelante.
-                    </p>
-                  </div>
-
-                  {suggestionsLoading ? (
-                    <div style={{
-                      padding: '20px',
-                      textAlign: 'center',
-                      color: 'var(--color-text-secondary)',
-                      fontSize: '13px',
-                    }}>
-                      Cargando preguntas sugeridas...
-                    </div>
-                  ) : availableSuggestions.length === 0 ? (
-                    <div style={{
-                      padding: '20px 0',
-                      color: 'var(--color-text-secondary)',
-                      fontSize: '13px',
-                      lineHeight: 1.5,
-                    }}>
-                      Ya agregaste todas las preguntas sugeridas disponibles. Si eliminas una FAQ creada desde sugerencias, volvera a aparecer aca.
-                    </div>
-                  ) : (
-                    availableSuggestions.map(suggestion => {
-                      const selected = selectedSuggestionIds.includes(suggestion.id)
-
-                      return (
-                        <button
-                          key={suggestion.id}
-                          type="button"
-                          aria-pressed={selected}
-                          onClick={() => toggleSuggestion(suggestion.id)}
-                          style={{
-                            width: '100%',
-                            textAlign: 'left',
-                            minHeight: '44px',
-                            padding: '9px 12px',
-                            background: selected ? 'rgba(19, 168, 162, 0.2)' : brand.surface,
-                            border: `1px solid ${selected ? FAQ_PRIMARY : FAQ_BORDER}`,
-                            borderRadius: '12px',
-                            boxShadow: FAQ_CARD_SHADOW,
-                            color: selected ? FAQ_PRIMARY : FAQ_TEXT,
-                            fontFamily: 'var(--font-family)',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <span style={{ display: 'flex', gap: '11px', alignItems: 'center' }}>
-                            {selected && (
-                              <span
-                                aria-hidden="true"
-                                style={{
-                                  width: '19px',
-                                  height: '19px',
-                                  borderRadius: '50%',
-                                  background: FAQ_PRIMARY,
-                                  color: '#fff',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontSize: '12px',
-                                  lineHeight: 1,
-                                  flexShrink: 0,
-                                }}
-                              >
-                                <AppIcon name="check" size={13} strokeWidth={2.6} />
-                              </span>
-                            )}
-                            {!selected && (
-                              <span
-                                aria-hidden="true"
-                                style={{
-                                  width: '19px',
-                                  height: '19px',
-                                  borderRadius: '50%',
-                                  border: `1px solid ${FAQ_BORDER}`,
-                                  background: 'var(--color-bg-subtle)',
-                                  flexShrink: 0,
-                                }}
-                              />
-                            )}
-                            <span style={{ minWidth: 0 }}>
-                              <strong style={{ display: 'block', fontSize: '11px', lineHeight: 1.25, overflowWrap: 'anywhere' }}>
-                                {suggestion.pregunta}
-                              </strong>
-                            </span>
-                          </span>
-                        </button>
-                      )
-                    })
-                  )}
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', marginTop: '10px' }}>
-                    <Button
-                      type="button"
-                      loading={formLoading}
-                      disabled={suggestionsLoading || availableSuggestions.length === 0}
-                      onClick={handleAddSelectedSuggestions}
-                      style={{
-                        width: 'min(100%, 240px)',
-                        height: '46px',
-                        borderRadius: '11px',
-                        background: brand.primaryGradient,
-                        border: 'none',
-                        boxShadow: brand.shadowAction,
-                        fontSize: '12px',
-                        fontWeight: 800,
-                        letterSpacing: 0,
-                      }}
-                    >
-                      Agregar seleccionadas{selectedSuggestionIds.length > 0 ? ` (${selectedSuggestionIds.length})` : ''}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={openCreateForm}
-                      disabled={formLoading}
-                      style={{
-                        width: 'min(100%, 240px)',
-                        height: '46px',
-                        borderRadius: '9px',
-                        borderColor: FAQ_PRIMARY,
-                        color: FAQ_PRIMARY,
-                        background: brand.surface,
-                        fontSize: '12px',
-                        fontWeight: 800,
-                        letterSpacing: 0,
-                      }}
-                    >
-                      <AppIcon name="plus" size={13} strokeWidth={2.4} />
-                      Crear nueva
-                    </Button>
-                    {allFaqs.length > 0 && (
-                      <Button type="button" variant="ghost" fullWidth onClick={closeSuggestions} disabled={formLoading}>
-                        Ir a tus FAQ
-                      </Button>
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {!showSuggestions && !showForm && allFaqs.length === 0 ? (
-                <section style={{
-                  padding: '48px 24px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 16,
-                  textAlign: 'center',
-                  background: brand.surface,
-                  border: `1px solid ${FAQ_BORDER}`,
-                  borderRadius: '16px',
-                  boxShadow: FAQ_CARD_SHADOW,
-                }}>
-                  <div style={{
-                    width: '80px',
-                    height: '80px',
-                    borderRadius: '20px',
-                    background: 'rgba(19, 168, 162, 0.12)',
-                    color: FAQ_PRIMARY,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '36px',
-                    fontWeight: 400,
-                  }}>?</div>
-                  <h2 style={{ fontSize: '22px', margin: 0, padding: 10, color: FAQ_TEXT, fontWeight: 700 }}>Todavia no hay FAQs</h2>
-                  <p style={{ color: FAQ_MUTED, fontSize: '14px', lineHeight: 1.5, margin: 0, padding: 8, maxWidth: '260px' }}>
-                    Agrega preguntas frecuentes para ayudar a tus clientes y automatizar respuestas.
-                  </p>
-                  <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <Button
-                      type="button"
-                      onClick={() => void openSuggestions()}
-                      style={{
-                        width: 'auto',
-                        height: 'auto',
-                        margin: 12,
-                        padding: '14px 40px',
-                        borderRadius: 'var(--radius-md)',
-                        background: brand.primaryGradient,
-                        border: 'none',
-                        boxShadow: brand.shadowAction,
-                        fontSize: '14px',
-                        fontWeight: 700,
-                        letterSpacing: 1,
-                      }}
-                    >
-                      COMENZAR
-                    </Button>
-                  </div>
-                </section>
-              ) : !showSuggestions && faqs.length === 0 ? (
-                <section style={{
-                  padding: '24px 16px',
-                  textAlign: 'center',
-                  color: 'var(--color-text-secondary)',
-                  fontSize: '13px',
-                  background: 'var(--color-bg)',
-                  borderRadius: 'var(--radius-md)',
-                }}>
-                  No hay FAQs que coincidan con estos filtros.
-                </section>
-              ) : !showSuggestions ? (
-                <section style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                  {faqs.map(faq => (
-                    <FaqCard
-                      key={faq.id}
-                      faq={faq}
-                      busy={busyFaqId === faq.id}
-                      onEdit={openEditForm}
-                      onDelete={handleDelete}
-                      onToggle={handleToggle}
-                    />
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => void openSuggestions()}
-                    style={{
-                      width: '100%',
-                      alignSelf: 'center',
-                      marginTop: '6px',
-                      padding: '13px 14px',
-                      background: brand.surface,
-                      border: `1px solid ${FAQ_BORDER}`,
-                      borderRadius: '10px',
-                      color: FAQ_PRIMARY,
-                      fontSize: '12px',
-                      fontWeight: 800,
-                      fontFamily: 'var(--font-family)',
-                      boxShadow: FAQ_CARD_SHADOW,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', verticalAlign: '-2px', marginRight: '6px' }}>
-                      <AppIcon name="plus" size={13} strokeWidth={2.4} />
-                    </span>
-                    Agregar mas preguntas sugeridas
-                  </button>
-                </section>
-              ) : null}
-            </>
+            <section className="faq-list" aria-live="polite">
+              {faqs.map(faq => (
+                <FaqCard
+                  key={faq.id}
+                  faq={faq}
+                  busy={busyFaqId === faq.id}
+                  onEdit={openEditForm}
+                  onDelete={setDeleteTarget}
+                />
+              ))}
+              <button type="button" className="faq-suggestions-entry" onClick={() => void openSuggestions()}>
+                <AppIcon name="plus" size={17} />
+                Agregar preguntas sugeridas
+              </button>
+              {hasFilters && <button type="button" className="faq-clear-filters" onClick={clearFilters}>Limpiar filtros</button>}
+            </section>
           )}
         </main>
       </div>
 
-      {pendingDiscardAction && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="discard-faq-title"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 50,
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            padding: '12px',
-            background: 'rgba(15, 23, 42, 0.28)',
-          }}
-        >
-          <div style={{
-            width: '100%',
-            maxWidth: '390px',
-            padding: '16px',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-bg)',
-            boxShadow: 'var(--shadow-lg)',
-          }}>
-            <h2 id="discard-faq-title" style={{ fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>
-              Cambios sin guardar
-            </h2>
-            <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', lineHeight: 1.45, marginBottom: '14px' }}>
-              Si salis ahora, se van a perder los cambios de esta pregunta.
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <Button type="button" fullWidth onClick={() => setPendingDiscardAction(null)}>
-                Seguir editando
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                fullWidth
-                onClick={discardPendingChanges}
-                style={{ color: 'var(--color-error)' }}
-              >
-                Descartar cambios
-              </Button>
-            </div>
-          </div>
+      <button className="faq-bot" type="button" disabled={!business?.slug} onClick={() => business?.slug && openChatPreview(business.slug, navigate)}>
+        <span className="faq-bot__label"><i aria-hidden="true" />Probá tu chat</span>
+        <span className="faq-bot__avatar" aria-hidden="true"><img src="/isoBot-transparente.png" alt="" /></span>
+      </button>
+
+      {showForm && (
+        <div className="faq-modal-backdrop" role="presentation" onMouseDown={event => {
+          if (event.target === event.currentTarget && !formLoading) requestCloseForm()
+        }}>
+          <section className="faq-modal" role="dialog" aria-modal="true" aria-labelledby="faq-form-title">
+            <header className="faq-modal__header">
+              <div>
+                <h2 id="faq-form-title">{editingFaq ? 'Editar pregunta' : 'Nueva pregunta'}</h2>
+                <p>{editingFaq ? 'Actualizá la información que verá tu chatbot.' : 'Agregá una respuesta útil para tus clientes.'}</p>
+              </div>
+              <button type="button" onClick={requestCloseForm} disabled={formLoading} aria-label="Cerrar formulario"><AppIcon name="close" size={22} /></button>
+            </header>
+            <FaqForm
+              key={editingFaq?.id ?? 'new-faq'}
+              faq={editingFaq ?? undefined}
+              categories={categories}
+              loading={formLoading}
+              submitError={error}
+              onSubmit={handleSubmit}
+              onCancel={requestCloseForm}
+              onDirtyChange={setHasUnsavedFaqChanges}
+            />
+          </section>
         </div>
       )}
-    </>
+
+      {showSuggestions && (
+        <div className="faq-modal-backdrop faq-suggestions-page">
+          <section className="faq-suggestions-modal" aria-labelledby="faq-suggestions-title">
+            <header className="faq-suggestions__header">
+              <button type="button" disabled={formLoading} onClick={() => setShowSuggestions(false)} aria-label="Volver">
+                <span aria-hidden="true">←</span>
+              </button>
+              <div>
+                <h2 id="faq-suggestions-title">Elegí preguntas para comenzar</h2>
+                <p>Seleccioná las que suelen hacer tus clientes. Después vas a poder editarlas.</p>
+              </div>
+            </header>
+            <div className="faq-suggestions">
+              {suggestionsLoading ? (
+                <div className="faq-skeleton" aria-label="Cargando preguntas sugeridas" aria-busy="true"><i /><span /><small /></div>
+              ) : suggestionsError ? (
+                <div className="faq-form__submit-error" role="alert">
+                  {suggestionsError}
+                  <Button type="button" variant="outline" onClick={() => void openSuggestions()}>Reintentar</Button>
+                </div>
+              ) : availableSuggestions.length === 0 ? (
+                <div className="faq-state-card faq-state-card--compact">
+                  <h2>No hay sugerencias disponibles</h2>
+                  <p>Ya agregaste todas las preguntas sugeridas del catálogo.</p>
+                </div>
+              ) : availableSuggestions.map(suggestion => {
+                const selected = selectedSuggestionIds.includes(suggestion.id)
+                return (
+                  <button
+                    key={suggestion.id}
+                    type="button"
+                    aria-pressed={selected}
+                    className={selected ? 'is-selected' : ''}
+                    disabled={formLoading}
+                    onClick={() => setSelectedSuggestionIds(current =>
+                      current.includes(suggestion.id)
+                        ? current.filter(id => id !== suggestion.id)
+                        : [...current, suggestion.id],
+                    )}
+                  >
+                    <span className="faq-suggestions__check">{selected && <AppIcon name="check" size={14} strokeWidth={3} />}</span>
+                    <span><strong>{suggestion.pregunta}</strong></span>
+                  </button>
+                )
+              })}
+              {error && <div className="faq-form__submit-error" role="alert">{error}</div>}
+              <div className="faq-suggestions__actions">
+                <Button
+                  type="button"
+                  loading={formLoading}
+                  disabled={suggestionsLoading || selectedSuggestionIds.length === 0}
+                  onClick={() => void handleAddSuggestions()}
+                >
+                  Agregar seleccionadas{selectedSuggestionIds.length > 0 ? ` (${selectedSuggestionIds.length})` : ''}
+                </Button>
+                <button type="button" className="faq-suggestions__custom" disabled={formLoading} onClick={openCreateForm}>
+                  <AppIcon name="plus" size={16} />
+                  Crear una propia
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="faq-modal-backdrop">
+          <section className="faq-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-faq-title">
+            <span className="faq-delete-modal__icon"><AppIcon name="trash" size={30} /></span>
+            <h2 id="delete-faq-title">Eliminar pregunta</h2>
+            <p>¿Querés eliminar “{deleteTarget.pregunta}”? Dejará de estar disponible para el chatbot.</p>
+            {error && <div className="faq-form__submit-error" role="alert">{error}</div>}
+            <div>
+              <Button type="button" variant="outline" disabled={Boolean(busyFaqId)} onClick={() => { setDeleteTarget(null); setError('') }}>Cancelar</Button>
+              <Button type="button" loading={Boolean(busyFaqId)} onClick={() => void handleDelete()}>Eliminar</Button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {pendingDiscardAction && (
+        <div className="faq-modal-backdrop">
+          <section className="faq-delete-modal" role="dialog" aria-modal="true" aria-labelledby="discard-faq-title">
+            <span className="faq-delete-modal__icon faq-delete-modal__icon--warning"><AppIcon name="alert" size={30} /></span>
+            <h2 id="discard-faq-title">Cambios sin guardar</h2>
+            <p>Si cerrás ahora, se perderán los cambios de esta pregunta.</p>
+            <div>
+              <Button type="button" variant="outline" onClick={() => setPendingDiscardAction(null)}>Seguir editando</Button>
+              <Button type="button" onClick={() => {
+                const action = pendingDiscardAction
+                setPendingDiscardAction(null)
+                setHasUnsavedFaqChanges(false)
+                action()
+              }}>Descartar cambios</Button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
   )
 }

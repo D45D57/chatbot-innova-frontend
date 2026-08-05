@@ -1,0 +1,42 @@
+.page-back-button {
+  margin-bottom: 12px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.page-back-button--spacious {
+  margin-bottom: 22px;
+}
+
+.page-back-button > span {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-surface-muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.page-back-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-primary) 32%, transparent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.business-config-page__content > .page-back-button {
+  margin-top: 18px;
+}
+
+@media (min-width: 1000px) {
+  .page-back-button {
+    display: none;
+  }
+}

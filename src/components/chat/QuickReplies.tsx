@@ -1,14 +1,16 @@
+import type { QuickReplyAction, QuickReplyOption } from '../../types'
+import { AppIcon } from '../ui/AppIcon'
+
 interface QuickRepliesProps {
-  options: string[]
-  onSelect: (option: string) => void
+  options: QuickReplyOption[]
+  onSelect: (option: QuickReplyOption) => void
 }
 
-const ICON_MAP: Record<string, string> = {
-  'Ver catálogo':           '/Package.png',
-  'Horarios de atención': '/time.png',
-  'Solicitar presupuesto':  '/bag.png',
-  'Preguntas frecuentes':   '/help.png',
-  'Hablar con una persona': '/agent.png',
+const ICON_MAP: Partial<Record<QuickReplyAction, 'catalog' | 'time' | 'faq' | 'agent'>> = {
+  SHOW_CATALOG: 'catalog',
+  SHOW_SCHEDULE: 'time',
+  SHOW_FAQ_MENU: 'faq',
+  START_HUMAN_HANDOFF: 'agent',
 }
 
 export function QuickReplies({ options, onSelect }: QuickRepliesProps) {
@@ -22,10 +24,10 @@ export function QuickReplies({ options, onSelect }: QuickRepliesProps) {
         gap: '8px',
       }}>
         {options.map(option => {
-          const icon = ICON_MAP[option]
+          const icon = ICON_MAP[option.action]
           return (
             <button
-              key={option}
+              key={option.id}
               type="button"
               onClick={() => onSelect(option)}
               style={{
@@ -45,10 +47,9 @@ export function QuickReplies({ options, onSelect }: QuickRepliesProps) {
                 boxShadow: '0 1px 3px rgba(17,27,39,0.05)',
               }}
             >
-              {icon && (
-                <img src={icon} alt="" style={{ width: 16, height: 16, objectFit: 'contain' }} />
-              )}
-              {option}
+              {icon && <AppIcon name={icon} size={16} />}
+              {option.action === 'SHOW_MAIN_MENU' && <AppIcon name="arrowLeft" size={16} />}
+              {option.label}
             </button>
           )
         })}

@@ -3,9 +3,25 @@ import { apiRequest } from './apiClient'
 
 const STORAGE_PREFIX = 'emprendebot:consultas'
 
-type StoredConsultaEstado = ConsultaEstado | 'pendiente' | 'atendida' | 'respondida' | 'derivada'
+type StoredConsultaEstado =
+  | ConsultaEstado
+  | 'pendiente'
+  | 'atendida'
+  | 'respondida'
+  | 'derivada'
+  | 'INICIADA'
+  | 'NUEVA'
+  | 'EN_PROCESO'
+  | 'RESUELTA'
+  | 'CERRADA'
 
-const ESTADOS_VALIDOS: ConsultaEstado[] = ['nueva', 'en_proceso', 'cerrada']
+const ESTADOS_VALIDOS: ConsultaEstado[] = ['iniciada', 'nueva', 'en_proceso', 'resuelta', 'cerrada']
+
+export type ConsultaDerivadaApiFilter =
+  | 'todas'
+  | 'derivadas'
+  | 'atencion_personalizada'
+  | 'cotizaciones'
 
 function storageKey(userId?: string) {
   return `${STORAGE_PREFIX}:${userId ?? 'demo'}`
@@ -158,11 +174,23 @@ function createMockConsultas(userId?: string): Consulta[] {
 function mapLegacyEstado(
   estadoNombre?: StoredConsultaEstado,
 ): { estado: ConsultaEstado; derivada: boolean; cerradaPor: ConsultaCerradaPor | null } {
-  if (estadoNombre === 'en_proceso' || estadoNombre === 'atendida') {
+  if (estadoNombre === 'en_proceso' || estadoNombre === 'atendida' || estadoNombre === 'EN_PROCESO') {
     return { estado: 'en_proceso', derivada: false, cerradaPor: null }
   }
 
-  if (estadoNombre === 'respondida') {
+  if (estadoNombre === 'respondida' || estadoNombre === 'RESUELTA') {
+    return { estado: 'resuelta', derivada: false, cerradaPor: null }
+  }
+
+  if (estadoNombre === 'INICIADA') {
+    return { estado: 'iniciada', derivada: false, cerradaPor: null }
+  }
+
+  if (estadoNombre === 'NUEVA') {
+    return { estado: 'nueva', derivada: false, cerradaPor: null }
+  }
+
+  if (estadoNombre === 'CERRADA') {
     return { estado: 'cerrada', derivada: false, cerradaPor: 'bot' }
   }
 
@@ -181,6 +209,8 @@ function normalizeConsulta(raw: Omit<Consulta, 'estado'> & {
   estado?: StoredConsultaEstado
   estadoConsulta?: { nombre?: StoredConsultaEstado }
   estadoConsultaId?: string
+  sessionId?: string | null
+  lead?: { nombre?: string | null; telefono?: string | null } | null
 }): Consulta {
   const storedEstado = raw.estado ?? raw.estadoConsulta?.nombre
   const legacy = mapLegacyEstado(storedEstado)
@@ -202,6 +232,10 @@ function normalizeConsulta(raw: Omit<Consulta, 'estado'> & {
 
   return {
     ...consulta,
+    sessionAnonimaId: consulta.sessionAnonimaId ?? raw.sessionId,
+    clienteNombre: consulta.clienteNombre ?? raw.lead?.nombre ?? null,
+    clienteTelefono: consulta.clienteTelefono ?? raw.lead?.telefono ?? null,
+    mensajes: Array.isArray(consulta.mensajes) ? consulta.mensajes : [],
     estado,
     derivada,
     cerradaPor,
@@ -241,19 +275,37 @@ function writeConsultas(consultas: Consulta[], userId?: string) {
   window.localStorage.setItem(storageKey(userId), JSON.stringify(consultas))
 }
 
-export async function getConsultas(userId?: string): Promise<Consulta[]> {
-  try {
-    const response = await apiRequest<{ success: boolean; consultas: Consulta[] }>('/consultations')
-    if (response.consultas.length > 0) {
-      return response.consultas.map(normalizeConsulta).sort((left, right) => (
-        new Date(right.fechaActualizacion).getTime() - new Date(left.fechaActualizacion).getTime()
-      ))
-    }
-  } catch {
-    // La vista conserva su modo demo cuando la API todavía no está disponible.
-  }
+export async function getConsultas(): Promise<Consulta[]> {
+  const response = await apiRequest<{ success: boolean; consultas: Consulta[] }>('/consultations')
+  return response.consultas.map(normalizeConsulta).sort((left, right) => (
+    new Date(right.fechaActualizacion).getTime() - new Date(left.fechaActualizacion).getTime()
+  ))
+}
 
-  return readConsultas(userId).sort((left, right) => (
+export async function getConsultasDerivadas(
+  slug: string,
+  filtro: Exclude<ConsultaDerivadaApiFilter, 'todas'>,
+): Promise<Consulta[]> {
+  const query = filtro === 'derivadas'
+    ? ''
+    : `?filtro=${encodeURIComponent(filtro)}`
+  const [derivadas, listado] = await Promise.all([
+    apiRequest<Array<Omit<Consulta, 'estado'> & {
+      estado?: StoredConsultaEstado
+      sessionId?: string | null
+      lead?: { nombre?: string | null; telefono?: string | null } | null
+    }>>(`/consultations/${encodeURIComponent(slug)}/derivadas${query}`),
+    apiRequest<{ success: boolean; consultas: Consulta[] }>('/consultations'),
+  ])
+  const consultaCompletaPorId = new Map(
+    listado.consultas.map(consulta => [consulta.id, consulta]),
+  )
+
+  return derivadas.map(consulta => normalizeConsulta({
+    ...consultaCompletaPorId.get(consulta.id),
+    ...consulta,
+    mensajes: consultaCompletaPorId.get(consulta.id)?.mensajes ?? [],
+  })).sort((left, right) => (
     new Date(right.fechaActualizacion).getTime() - new Date(left.fechaActualizacion).getTime()
   ))
 }

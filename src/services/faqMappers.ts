@@ -8,7 +8,7 @@ export function mapFaqCategoryApiToUi(category: FAQCategoryApi): FAQCategory {
   }
 }
 
-export function mapFaqApiToUi(faq: FAQApi, index: number): FAQ {
+export function mapFaqApiToUi(faq: FAQApi): FAQ {
   return {
     id: faq.id,
     businessId: faq.botId,
@@ -16,8 +16,6 @@ export function mapFaqApiToUi(faq: FAQApi, index: number): FAQ {
     pregunta: faq.pregunta,
     respuesta: faq.respuesta,
     categoria: faq.categoria?.nombre,
-    activa: faq.activa ?? true,
-    orden: index + 1,
     createdAt: faq.fechaCreacion,
     updatedAt: faq.fechaModificacion,
   }

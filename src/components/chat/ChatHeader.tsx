@@ -1,50 +1,30 @@
+import type { HTMLAttributes } from 'react'
 import { Avatar } from '../ui/Avatar'
-import { brand } from '../../styles/brand'
 import type { Business } from '../../types'
 
 interface ChatHeaderProps {
   business: Business
   onRefresh?: () => void
-  onBackToDashboard?: () => void
+  onClose?: () => void
+  dragHandleProps?: HTMLAttributes<HTMLElement>
+  draggable?: boolean
+  isOnline?: boolean
 }
 
-export function ChatHeader({ business, onRefresh, onBackToDashboard }: ChatHeaderProps) {
+export function ChatHeader({ business, onRefresh, onClose, dragHandleProps, draggable = false, isOnline = true }: ChatHeaderProps) {
   return (
-    <header className="public-chat__header" style={{
+    <header {...dragHandleProps} className={`public-chat__header${draggable ? ' public-chat__header--draggable' : ''}`} style={{
       display: 'flex',
       alignItems: 'center',
       gap: '12px',
       padding: '14px 16px',
-      background: brand.primaryGradient,
+      background: 'var(--chat-gradient, linear-gradient(90deg, #13A8A2, #1372A8))',
       borderRadius: 0,
       flexShrink: 0,
       position: 'sticky',
       top: 0,
       zIndex: 3,
     }}>
-      {onBackToDashboard && (
-        <button
-          type="button"
-          onClick={onBackToDashboard}
-          title="Volver al panel"
-          aria-label="Volver al panel"
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: '50%',
-            background: 'rgba(255,255,255,0.2)',
-            color: '#fff',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            fontSize: 20,
-          }}
-        >
-          ←
-        </button>
-      )}
-
       <Avatar name={business.nombre} src={business.logo} size={40} />
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -62,11 +42,11 @@ export function ChatHeader({ business, onRefresh, onBackToDashboard }: ChatHeade
           <span style={{
             width: 7, height: 7,
             borderRadius: '50%',
-            background: '#22c55e',
+            background: isOnline ? '#22c55e' : '#f59e0b',
             flexShrink: 0,
           }} />
           <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)' }}>
-            Asistente · en línea
+            Asistente · {isOnline ? 'en línea' : 'sin conexión'}
           </span>
         </div>
       </div>
@@ -95,6 +75,19 @@ export function ChatHeader({ business, onRefresh, onBackToDashboard }: ChatHeade
             }}
           >
             Reiniciar chat
+          </button>
+        )}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            title="Cerrar vista previa"
+            aria-label="Cerrar vista previa"
+            className="public-chat__close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
           </button>
         )}
       </div>

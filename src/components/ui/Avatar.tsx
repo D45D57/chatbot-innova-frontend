@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 interface AvatarProps {
   name: string
   src?: string
@@ -6,6 +8,7 @@ interface AvatarProps {
 }
 
 export function Avatar({ name, src, size = 40, bgColor = 'var(--color-primary)' }: AvatarProps) {
+  const [failedSrc, setFailedSrc] = useState<string | undefined>()
   const initials = name
     .split(' ')
     .slice(0, 2)
@@ -13,11 +16,12 @@ export function Avatar({ name, src, size = 40, bgColor = 'var(--color-primary)' 
     .join('')
     .toUpperCase()
 
-  if (src) {
+  if (src && failedSrc !== src) {
     return (
       <img
         src={src}
         alt={name}
+        onError={() => setFailedSrc(src)}
         style={{
           width: size,
           height: size,

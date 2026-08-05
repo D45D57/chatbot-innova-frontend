@@ -1,16 +1,20 @@
 import type { Consulta, ConsultaEstado } from '../../types'
 import { formatRelativeTime } from '../../utils/formatRelativeTime'
 import { AppIcon } from '../ui/AppIcon'
+import type { ConsultationResolution } from '../../utils/consultationResolution'
 
 interface ConsultaCardProps {
   consulta: Consulta
   selected?: boolean
   onSelect: (consultaId: string) => void
+  resolution?: ConsultationResolution
 }
 
 const ESTADO_STYLES: Record<ConsultaEstado, { label: string; color: string; background: string }> = {
+  iniciada: { label: 'Iniciada', color: 'var(--status-new-text)', background: 'var(--status-new-bg)' },
   nueva: { label: 'Nueva', color: 'var(--status-new-text)', background: 'var(--status-new-bg)' },
-  en_proceso: { label: 'En proceso', color: 'var(--status-progress-text)', background: 'var(--status-progress-bg)' },
+  en_proceso: { label: 'En seguimiento', color: 'var(--status-progress-text)', background: 'var(--status-progress-bg)' },
+  resuelta: { label: 'Resuelta', color: 'var(--status-closed-text)', background: 'var(--status-closed-bg)' },
   cerrada: { label: 'Cerrada', color: 'var(--status-closed-text)', background: 'var(--status-closed-bg)' },
 }
 
@@ -30,90 +34,53 @@ function getDerivadaText(consulta: Consulta): string {
   return consulta.derivadaA ? `Derivada a ${consulta.derivadaA}` : 'Derivada a un asesor'
 }
 
-export function ConsultaCard({ consulta, selected = false, onSelect }: ConsultaCardProps) {
+export function ConsultaCard({ consulta, selected = false, onSelect, resolution }: ConsultaCardProps) {
   const estadoStyle = ESTADO_STYLES[consulta.estado]
   const derivadaText = getDerivadaText(consulta)
+  const resolvedByBot = resolution?.resolvedByBot === true
+  const overrideLabel = resolution?.overrideLabel
+  const effectiveStyle = overrideLabel ? ESTADO_STYLES['en_proceso'] : estadoStyle
+  const badgeLabel = resolvedByBot ? 'Resuelta por el bot' : (overrideLabel ?? estadoStyle.label)
 
   return (
     <button
       type="button"
+      className={`consulta-card${selected ? ' consulta-card--selected' : ''}`}
       onClick={() => onSelect(consulta.id)}
+      aria-pressed={selected}
       aria-label={`Ver conversación de ${consulta.clienteNombre || 'cliente sin identificar'}`}
-      style={{
-        width: '100%',
-        textAlign: 'left',
-        padding: '16px',
-        border: `1px solid ${selected ? 'var(--color-primary)' : 'var(--color-border)'}`,
-        borderRadius: 'var(--radius-md)',
-        background: 'var(--color-bg)',
-        boxShadow: 'var(--shadow-sm)',
-        color: 'var(--color-text-primary)',
-        fontFamily: 'var(--font-family)',
-        transition: 'border-color var(--transition), box-shadow var(--transition)',
-      }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '5px' }}>
-        <h3 style={{
-          minWidth: 0,
-          fontSize: '15px',
-          fontWeight: 700,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-          {consulta.clienteNombre || 'Cliente sin identificar'}
-        </h3>
-        <span style={{
-          flexShrink: 0,
-          padding: '4px 9px',
-          borderRadius: 'var(--radius-full)',
-          background: estadoStyle.background,
-          color: estadoStyle.color,
-          fontSize: '11px',
-          fontWeight: 700,
-        }}>
-          {estadoStyle.label}
-        </span>
-      </div>
-
-      <p style={{
-        color: 'var(--color-text-secondary)',
-        fontSize: '13px',
-        lineHeight: 1.4,
-        marginBottom: derivadaText ? '3px' : '5px',
-        display: '-webkit-box',
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical',
-        overflow: 'hidden',
-      }}>
-        {getLastMessage(consulta)}
-      </p>
-
-      {derivadaText && (
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: '11px', marginBottom: '5px' }}>
-          {derivadaText}
-        </p>
-      )}
-
-      <p style={{ color: 'var(--color-text-secondary)', fontSize: '11px', marginBottom: '10px' }}>
-        {getCanalLabel(consulta.canal)}
-      </p>
-
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '10px',
-        fontSize: '11px',
-      }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--color-text-secondary)' }}>
-          <AppIcon name="time" size={12} strokeWidth={1.8} />
-          {formatRelativeTime(consulta.fechaActualizacion)}
-        </span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: 'var(--color-primary)', fontWeight: 600 }}>
-          <AppIcon name="chat" size={13} strokeWidth={1.8} />
-          Ver conversación
-        </span>
+      <span className="consulta-card__avatar" aria-hidden="true">
+        {(consulta.clienteNombre || 'C').trim().charAt(0).toUpperCase()}
+      </span>
+      <div className="consulta-card__body">
+        <div className="consulta-card__heading">
+          <h3>{consulta.clienteNombre || 'Cliente sin identificar'}</h3>
+          <span
+            className={`consulta-card__status${resolvedByBot ? ' consulta-card__status--bot' : ''}`}
+            style={resolvedByBot ? undefined : { background: effectiveStyle.background, color: effectiveStyle.color }}
+            title={resolvedByBot ? 'Estado visual estimado a partir de las señales disponibles' : undefined}
+          >
+            {resolvedByBot && <AppIcon name="automation" size={13} />}
+            {badgeLabel}
+          </span>
+        </div>
+        <p className="consulta-card__message">{getLastMessage(consulta)}</p>
+        {resolvedByBot ? (
+          <p className="consulta-card__derived consulta-card__derived--bot">Sin intervención requerida</p>
+        ) : (
+          <>
+            <p className="consulta-card__derived">Requiere seguimiento{derivadaText ? ` · ${derivadaText}` : ''}</p>
+            {consulta.derivada && !consulta.clienteNombre && !consulta.clienteTelefono && (
+              <p className="consulta-card__contact-warning">Sin datos de contacto</p>
+            )}
+          </>
+        )}
+        <div className="consulta-card__footer">
+          <span><AppIcon name="chat" size={14} />{getCanalLabel(consulta.canal)}</span>
+          <span><AppIcon name="time" size={14} />{formatRelativeTime(consulta.fechaActualizacion)}</span>
+          <span className="consulta-card__action"><AppIcon name="chat" size={14} />Ver conversación</span>
+        </div>
       </div>
     </button>
   )

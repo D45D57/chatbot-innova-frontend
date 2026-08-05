@@ -1,380 +1,249 @@
-import { useState, useRef, useEffect } from 'react'
-import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { useBusiness } from '../context/BusinessContext'
-import { useAuth } from '../context/AuthContext'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { brand } from '../styles/brand'
+import {
+  createProductApi,
+  getProductByIdApi,
+  updateProductApi,
+} from '../services/productApi'
+import { AppIcon } from '../components/ui/AppIcon'
+import '../styles/catalog.css'
 
 interface ProductForm {
   nombre: string
   descripcion: string
   precio: string
-  precioConsultar: boolean | undefined   // undefined = sin selección todavía
-  imagen: string
+  activo: boolean
+  precioConsultar: boolean
+  imagenActual: string
+}
+
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024
+const VALID_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+
+const EMPTY_FORM: ProductForm = {
+  nombre: '',
+  descripcion: '',
+  precio: '',
+  activo: true,
+  precioConsultar: false,
+  imagenActual: '',
 }
 
 export function ProductFormPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
-  const locationPrecioConsultar = (location.state as { precioConsultar?: boolean } | null)?.precioConsultar
-  const { user } = useAuth()
-  const { business, isBusinessLoading, updateBusiness, loadBusiness, saveBusiness } = useBusiness()
+  const isEditing = Boolean(id)
+  const initialPriceMode = (location.state as { precioConsultar?: boolean } | null)?.precioConsultar ?? false
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [form, setForm] = useState<ProductForm>({ ...EMPTY_FORM, precioConsultar: initialPriceMode })
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState('')
+  const [removeImage, setRemoveImage] = useState(false)
+  const [isLoading, setIsLoading] = useState(isEditing)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [formError, setFormError] = useState('')
 
   useEffect(() => {
-    if (user) loadBusiness(user.id)
-  }, [user, loadBusiness])
+    if (!imageFile) return
+    const objectUrl = URL.createObjectURL(imageFile)
+    const updatePreview = window.setTimeout(() => setImagePreview(objectUrl), 0)
+    return () => {
+      window.clearTimeout(updatePreview)
+      URL.revokeObjectURL(objectUrl)
+    }
+  }, [imageFile])
 
-  const isEditing = !!id
-  const productos = business?.productos ?? []
-  const existing = isEditing ? productos.find(p => p.id === id) : undefined
+  useEffect(() => {
+    if (!id) return
+    let active = true
 
-  const [form, setForm] = useState<ProductForm>({
-    nombre: existing?.nombre ?? '',
-    descripcion: existing?.descripcion ?? '',
-    precio: existing?.precio != null ? String(existing.precio) : '',
-    precioConsultar: existing?.precioConsultar ? true : existing?.precio != null ? false : locationPrecioConsultar ?? false,
-    imagen: existing?.imagen ?? '',
-  })
-
-  const set = (field: keyof ProductForm) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      setForm(prev => ({ ...prev, [field]: e.target.value }))
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = ev => {
-      const img = new Image()
-      img.onload = () => {
-        const MAX = 400
-        const scale = Math.min(MAX / img.width, MAX / img.height, 1)
-        const canvas = document.createElement('canvas')
-        canvas.width = img.width * scale
-        canvas.height = img.height * scale
-        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
-        setForm(prev => ({ ...prev, imagen: canvas.toDataURL('image/jpeg', 0.7) }))
+    const loadProduct = async () => {
+      setIsLoading(true)
+      setLoadError('')
+      try {
+        const product = await getProductByIdApi(id)
+        if (!product) throw new Error('El producto no existe o no pertenece a tu catálogo.')
+        if (!active) return
+        setForm({
+          nombre: product.nombre,
+          descripcion: product.descripcion ?? '',
+          precio: product.requiereCotizacion ? '' : String(Number(product.precio)),
+          activo: product.activo,
+          precioConsultar: product.requiereCotizacion,
+          imagenActual: product.urlImagen ?? '',
+        })
+      } catch (caught) {
+        if (active) setLoadError(caught instanceof Error ? caught.message : 'No pudimos cargar el producto.')
+      } finally {
+        if (active) setIsLoading(false)
       }
-      img.src = ev.target?.result as string
-    }
-    reader.readAsDataURL(file)
-  }
-
-  const hasValidPrice = form.precioConsultar === true
-    || (form.precio.trim() !== '' && Number.isFinite(Number(form.precio)) && Number(form.precio) > 0)
-  const canSave = !!form.nombre.trim() && hasValidPrice && !isBusinessLoading
-
-  const handleSave = () => {
-    console.log('handleSave clicked', { form, user, business, isBusinessLoading })
-    if (!canSave || !user) return
-
-    const nuevo = {
-      id: crypto.randomUUID(),
-      nombre: form.nombre,
-      descripcion: form.descripcion,
-      precio: form.precioConsultar === false && form.precio ? Number(form.precio) : undefined,
-      precioConsultar: form.precioConsultar === true || undefined,
-      imagen: form.imagen || undefined,
-      disponible: true,
     }
 
-    if (!business) {
-      // Si no hay negocio configurado aún, creamos uno básico y le agregamos el producto
-      saveBusiness({ userId: user.id, nombre: user.nombre, productos: [nuevo] })
-      navigate('/catalogo')
+    void loadProduct()
+    return () => { active = false }
+  }, [id])
+
+  const updateField = (field: 'nombre' | 'descripcion' | 'precio') =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setForm(current => ({ ...current, [field]: event.target.value }))
+
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setFormError('')
+    if (!VALID_IMAGE_TYPES.includes(file.type)) {
+      setFormError('La imagen debe ser JPG, PNG o WEBP.')
+      event.target.value = ''
       return
     }
-
-    if (isEditing && existing) {
-      const updated = productos.map(p =>
-        p.id === id
-          ? {
-              ...p,
-              nombre: form.nombre,
-              descripcion: form.descripcion,
-              precio: form.precioConsultar === false && form.precio ? Number(form.precio) : undefined,
-              precioConsultar: form.precioConsultar === true || undefined,
-              imagen: form.imagen || undefined,
-            }
-          : p
-      )
-      updateBusiness({ productos: updated })
-    } else {
-      updateBusiness({ productos: [...productos, nuevo] })
+    if (file.size > MAX_IMAGE_SIZE) {
+      setFormError('La imagen no puede superar los 5 MB.')
+      event.target.value = ''
+      return
     }
-
-    navigate('/catalogo')
+    setImageFile(file)
+    setImagePreview('')
+    setRemoveImage(false)
   }
 
-  const inputStyle: React.CSSProperties = {
-    height: 48,
-    padding: '0 14px',
-    border: '1px solid var(--color-border)',
-    borderRadius: 8,
-    fontSize: 15,
-    fontFamily: 'var(--font-family)',
-    color: 'var(--color-text-primary)',
-    outline: 'none',
-    background: 'var(--color-bg)',
-    width: '100%',
-    boxSizing: 'border-box',
+  const price = Number(form.precio)
+  const hasValidPrice = form.precioConsultar || (form.precio.trim() !== '' && Number.isFinite(price) && price > 0)
+  const canSave = form.nombre.trim() !== '' && form.nombre.trim().length <= 200
+    && form.descripcion.trim().length <= 2000 && hasValidPrice
+    && !isSubmitting && !isLoading
+
+  const handleSave = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!canSave || isSubmitting) return
+    setIsSubmitting(true)
+    setFormError('')
+    try {
+      if (isEditing && id) {
+        await updateProductApi(id, {
+          nombre: form.nombre.trim(),
+          descripcion: form.descripcion.trim() || null,
+          ...(!form.precioConsultar ? { precio: price } : {}),
+          activo: form.activo,
+          requiereCotizacion: form.precioConsultar,
+          ...(removeImage ? { urlImagen: null } : {}),
+          ...(imageFile ? { imagen: imageFile } : {}),
+        })
+        navigate('/catalogo', { state: { successMessage: 'Producto actualizado correctamente.' } })
+      } else {
+        await createProductApi({
+          nombre: form.nombre.trim(),
+          descripcion: form.descripcion.trim() || undefined,
+          ...(!form.precioConsultar ? { precio: price } : {}),
+          activo: form.activo,
+          requiereCotizacion: form.precioConsultar,
+          ...(imageFile ? { imagen: imageFile } : {}),
+        })
+        navigate('/catalogo', { state: { successMessage: 'Producto creado correctamente.' } })
+      }
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : 'No pudimos guardar el producto.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: 14,
-    fontWeight: 600,
-    color: 'var(--color-text-primary)',
+  const displayedImage = imagePreview || (!removeImage ? form.imagenActual : '')
+
+  if (isLoading) {
+    return <div className="product-form-page"><div className="product-form-loading" role="status"><i /><span /><span /><span /></div></div>
+  }
+
+  if (loadError) {
+    return (
+      <div className="product-form-page" role="alert">
+        <div className="catalog-state-card product-form-error">
+          <span className="catalog-state-card__icon catalog-state-card__icon--error"><AppIcon name="alert" size={34} /></span>
+          <h2>No pudimos cargar el producto</h2>
+          <p>{loadError}</p>
+          <button type="button" onClick={() => navigate('/catalogo')} className="catalog-primary-button">Volver al catálogo</button>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div style={{
-      minHeight: '100svh',
-      background: 'var(--color-bg)',
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '20px 20px 16px',
-        borderBottom: '1px solid var(--color-border)',
-        position: 'sticky',
-        top: 0,
-        background: 'var(--color-bg)',
-        zIndex: 10,
-      }}>
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-          {isEditing ? 'Editar producto' : 'Agregar al catálogo'}
-        </h2>
-      </div>
-
-      {/* Formulario */}
-      <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: 20, flex: 1 }}>
-
-        <button
-          type="button"
-          onClick={() => navigate('/catalogo')}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            alignSelf: 'flex-start',
-            gap: 8,
-            padding: 0,
-            color: 'var(--color-text-primary)',
-            fontSize: 12,
-            fontWeight: 700,
-          }}
-        >
-          <span aria-hidden="true" style={{
-            width: 20,
-            height: 20,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '50%',
-            background: 'var(--color-surface-muted)',
-            fontSize: 14,
-            lineHeight: 1,
-          }}>
-            {'<'}
-          </span>
-          Volver
-        </button>
-
-        {/* Tipo de precio */}
-        <div style={{
-          minHeight: 34,
-          padding: '7px 12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          border: '1px solid rgba(19, 168, 162, 0.22)',
-          borderRadius: 'var(--radius-full)',
-          background: 'rgba(19, 168, 162, 0.08)',
-          color: 'var(--color-primary)',
-        }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 600 }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M20.59 13.41 11 23l-9-9V2h12l6.59 6.59a3.41 3.41 0 0 1 0 4.82Z" />
-              <path d="M7 7h.01" />
-            </svg>
-            {form.precioConsultar ? 'Precio a convenir' : 'Precio fijo'}
-          </span>
-          <button
-            type="button"
-            onClick={() => setForm(prev => ({
-              ...prev,
-              precioConsultar: !prev.precioConsultar,
-              precio: prev.precioConsultar ? prev.precio : '',
-            }))}
-            style={{
-              padding: 0,
-              color: 'var(--color-primary)',
-              fontSize: 11,
-              fontWeight: 600,
-              textDecoration: 'underline',
-              textUnderlineOffset: 2,
-            }}
-          >
-            Cambiar
+    <div className="product-form-page">
+      <form onSubmit={handleSave} className="product-form-card">
+        <header className="product-form-modal-header">
+          <h1>{isEditing ? 'Editar producto' : 'Nuevo producto'}</h1>
+          <button type="button" onClick={() => navigate('/catalogo')} aria-label="Cerrar">
+            <AppIcon name="close" size={23} />
           </button>
-        </div>
+        </header>
 
-        {/* Imagen */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <label style={labelStyle}>Imagen</label>
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            style={{
-              border: '1.5px dashed var(--color-border)',
-              borderRadius: 12,
-              height: 140,
-              display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              gap: 8, cursor: 'pointer',
-              background: 'var(--color-bg-subtle)',
-              overflow: 'hidden',
-            }}
-          >
-            {form.imagen
-              ? <img src={form.imagen} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              : <>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" />
-                    <polyline points="21 15 16 10 5 21" />
-                  </svg>
-                  <p style={{ margin: 0, fontSize: 12, color: '#9CA3AF', textAlign: 'center' }}>
-                    Haz clic para subir una imagen<br />JPG, PNG o GIF (Opcional)
-                  </p>
-                </>
-            }
-          </div>
-          <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageChange} style={{ display: 'none' }} />
-        </div>
-
-        {/* Nombre */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={labelStyle}>Nombre del producto o  servicio</label>
-          <input
-            value={form.nombre}
-            onChange={set('nombre')}
-            placeholder="Corte y peinado"
-            style={inputStyle}
-          />
-        </div>
-
-        {/* Descripción */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={labelStyle}>Descripción</label>
-          <textarea
-            value={form.descripcion}
-            onChange={set('descripcion')}
-            placeholder="Incluye lavado, corte personalizado y peinado final."
-            rows={3}
-            style={{
-              padding: '12px 14px',
-              border: '1px solid var(--color-border)',
-              borderRadius: 8,
-              fontSize: 15,
-              fontFamily: 'var(--font-family)',
-              color: 'var(--color-text-primary)',
-              outline: 'none',
-              resize: 'vertical',
-              background: 'var(--color-bg)',
-              width: '100%',
-              boxSizing: 'border-box',
-            }}
-          />
-        </div>
-
-        {/* Precio fijo */}
-        {form.precioConsultar === false ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <label style={labelStyle}>Precio</label>
-            <input
-              value={form.precio}
-              onChange={set('precio')}
-              onBlur={e => {
-                const val = parseFloat(e.target.value)
-                if (!isNaN(val)) setForm(prev => ({ ...prev, precio: val.toFixed(2) }))
-              }}
-              placeholder="0.00"
-              type="number"
-              min={0}
-              step="0.01"
-              style={inputStyle}
-            />
-          </div>
-        ) : (
-          <div style={{
-            minHeight: 70,
-            padding: '13px 16px',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 7,
-            border: '1px solid rgba(108, 115, 142, 0.12)',
-            borderRadius: 18,
-            background: '#E7EDF5',
-            color: 'var(--color-text-secondary)',
-            fontSize: 15,
-            lineHeight: 1.5,
-          }}>
-            <span aria-hidden="true" style={{
-              width: 18,
-              height: 18,
-              flexShrink: 0,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginTop: 2,
-              color: 'var(--color-secondary)',
-            }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8.8 8.8 0 0 1-3.6-.8L4 20l1.5-4A7.3 7.3 0 0 1 4 11.5 7.5 7.5 0 0 1 12 4a7.5 7.5 0 0 1 8 7.5Z" />
-                <path d="M9 12h.01M12 12h.01M15 12h.01" />
-              </svg>
-            </span>
+        <section className="product-form-section">
+          <div className={`product-price-mode${form.precioConsultar ? ' product-price-mode--quote' : ''}`}>
             <span>
-              En el catálogo del chatbot se mostrará como <strong>Precio a convenir.</strong>
+              {form.precioConsultar ? (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <path d="M9.1 13a3 3 0 1 1 5.83 1c0 2-3 3-3 3" />
+                  <path d="M12 21h.01" />
+                </svg>
+              ) : (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
+                  <path d="M7 7h.01" />
+                </svg>
+              )}
+              {form.precioConsultar ? 'Requiere cotización' : 'Precio fijo'}
             </span>
+            {!isEditing && (
+              <button type="button" onClick={() => setForm(current => ({ ...current, precioConsultar: !current.precioConsultar, precio: '' }))}>Cambiar</button>
+            )}
           </div>
-        )}
 
-        {/* Botones */}
-        <div style={{ display: 'flex', gap: 12, paddingTop: 4, marginTop: 'auto' }}>
-          <button
-            onClick={() => navigate('/catalogo')}
-            style={{
-              flex: 1, height: 48,
-              background: 'var(--color-bg)', color: 'var(--color-primary)',
-              border: '1.5px solid #13A8A2', borderRadius: 8,
-              fontSize: 14, fontWeight: 700, cursor: 'pointer',
-              fontFamily: 'var(--font-family)',
-            }}
-          >
-            CANCELAR
+          <div className="product-form-field">
+            <label>Imagen del producto</label>
+            <button type="button" className={`product-image-upload${displayedImage ? ' product-image-upload--filled' : ''}`} onClick={() => fileInputRef.current?.click()}>
+              {displayedImage ? <img src={displayedImage} alt="Vista previa del producto" /> : <><AppIcon name="catalog" size={38} /><strong>Hacé clic para subir una imagen</strong><span>JPG, PNG o WEBP · Máx. 5 MB (Opcional)</span></>}
           </button>
-          <button
-            onClick={handleSave}
-            disabled={!canSave}
-            style={{
-              flex: 1, height: 48,
-              background: canSave ? brand.primaryGradient : '#ccc',
-              color: '#fff', border: 'none', borderRadius: 'var(--radius-md)',
-              fontSize: 14, fontWeight: 700,
-              cursor: canSave ? 'pointer' : 'not-allowed',
-              fontFamily: 'var(--font-family)',
-            }}
-          >
-            GUARDAR
-          </button>
-        </div>
-      </div>
+          <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handleImageChange} style={{ display: 'none' }} />
+            {displayedImage && <div className="product-image-actions"><button type="button" onClick={() => fileInputRef.current?.click()}>Cambiar</button><button type="button" onClick={() => { setImageFile(null); setImagePreview(''); setRemoveImage(true); if (fileInputRef.current) fileInputRef.current.value = '' }}>Quitar</button></div>}
+          </div>
+
+          <div className="product-form-field">
+            <label htmlFor="product-name">Nombre del producto</label>
+            <input id="product-name" value={form.nombre} onChange={updateField('nombre')} maxLength={200} required placeholder="Ej: Corte de cabello" />
+          </div>
+
+          <div className="product-form-field">
+            <label htmlFor="product-description">Descripción</label>
+            <textarea id="product-description" value={form.descripcion} onChange={updateField('descripcion')} maxLength={2000} rows={4} placeholder="Describí tu producto" />
+          </div>
+
+          {!form.precioConsultar ? (
+            <div className="product-form-field">
+              <label htmlFor="product-price">Precio</label>
+              <div className="product-input-prefix"><span>$</span><input id="product-price" value={form.precio} onChange={updateField('precio')} type="number" min="0.01" step="0.01" required /></div>
+            </div>
+          ) : (
+            <div className="product-quote-help"><AppIcon name="chat" size={20} /><span>En el chatbot se mostrará como <strong>Precio a convenir</strong>.</span></div>
+          )}
+
+          <label className="product-active-toggle">
+            <span><strong>Producto activo</strong><small>Los clientes podrán verlo en el catálogo.</small></span>
+            <input type="checkbox" checked={form.activo} onChange={event => setForm(current => ({ ...current, activo: event.target.checked }))} />
+            <i aria-hidden="true" />
+          </label>
+
+          {formError && <div className="catalog-alert catalog-alert--error" role="alert"><AppIcon name="alert" size={18} />{formError}</div>}
+        </section>
+
+        <footer className="product-form-actions">
+          <button type="button" className="catalog-secondary-button" disabled={isSubmitting} onClick={() => navigate('/catalogo')}>Cancelar</button>
+          <button type="submit" className="catalog-primary-button" disabled={!canSave} style={{ background: canSave ? brand.primaryGradient : undefined }}>{isSubmitting ? 'Guardando…' : isEditing ? 'Guardar cambios' : 'Guardar producto'}</button>
+        </footer>
+      </form>
     </div>
   )
 }

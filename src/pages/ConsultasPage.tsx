@@ -1,59 +1,45 @@
-import { useEffect, useState, type CSSProperties } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ConsultaCard } from '../components/consultas/ConsultaCard'
 import { ConsultaDetail } from '../components/consultas/ConsultaDetail'
 import { Drawer } from '../components/layout/Drawer'
 import { AppIcon } from '../components/ui/AppIcon'
 import { Avatar } from '../components/ui/Avatar'
+import { PageBackButton } from '../components/navigation/PageBackButton'
 import { useAuth } from '../context/AuthContext'
 import { useBusiness } from '../context/BusinessContext'
-import { brand } from '../styles/brand'
 import {
   useConsultas,
-  type ConsultaCanalFilter,
   type ConsultaEstadoFilter,
   type ConsultaSortOption,
 } from '../hooks/useConsultas'
+import { openChatPreview } from '../utils/chatRoutes'
+import '../styles/consultas.css'
 
 const ESTADO_OPTIONS: Array<{ value: ConsultaEstadoFilter; label: string }> = [
   { value: 'todas', label: 'Todas' },
-  { value: 'nueva', label: 'Nuevas' },
-  { value: 'en_proceso', label: 'En proceso' },
-  { value: 'cerrada', label: 'Cerradas' },
+  { value: 'nueva', label: 'Nueva' },
+  { value: 'en_proceso', label: 'En seguimiento' },
+  { value: 'resuelta', label: 'Resuelta' },
+  { value: 'cerrada', label: 'Cerrada' },
 ]
 
-const CANAL_OPTIONS: Array<{ value: ConsultaCanalFilter; label: string }> = [
-  { value: 'todos', label: 'Todos' },
-  { value: 'web', label: 'Web' },
-  { value: 'whatsapp', label: 'WhatsApp' },
-]
+// Valores válidos de URL que no se muestran en el dropdown (ej: filtros de acceso rápido desde dashboard)
+const VALID_ESTADO_VALUES: ConsultaEstadoFilter[] = [...ESTADO_OPTIONS.map(o => o.value), 'activas', 'resuelta_bot']
 
 const SORT_OPTIONS: Array<{ value: ConsultaSortOption; label: string }> = [
   { value: 'recentes', label: 'Más recientes' },
   { value: 'antiguas', label: 'Más antiguas' },
 ]
 
-const fieldStyle: CSSProperties = {
-  width: '100%',
-  height: 44,
-  padding: '0 12px',
-  border: '1px solid var(--color-border)',
-  borderRadius: 10,
-  background: 'var(--color-bg)',
-  color: 'var(--color-text-primary)',
-  fontSize: 12,
-  fontFamily: 'var(--font-family)',
-  outline: 'none',
-}
-
-const labelStyle: CSSProperties = {
-  fontSize: 11,
-  fontWeight: 500,
-  color: 'var(--color-text-secondary)',
-}
+const isOptionValue = <T extends string>(
+  options: Array<{ value: T }>,
+  value: string | null,
+): value is T => options.some(option => option.value === value)
 
 export function ConsultasPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
   const { business, loadBusiness } = useBusiness()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -63,329 +49,236 @@ export function ConsultasPage() {
     filteredConsultas,
     selectedConsulta,
     selectedConsultaId,
+    resolutionByConsultaId,
     estadoFilter,
-    canalFilter,
     sortOption,
     searchQuery,
     isLoading,
+    error,
+    updateError,
+    updatingConsultaId,
     isShowingDemo,
     setEstadoFilter,
-    setCanalFilter,
     setSortOption,
     setSearchQuery,
     selectConsulta,
     clearSelection,
     updateConsultaStatus,
+    reloadConsultas,
   } = useConsultas(user?.id)
 
   useEffect(() => {
-    if (user) loadBusiness(user.id)
+    if (user) void loadBusiness(user.id)
   }, [loadBusiness, user])
+
+  useEffect(() => {
+    const sanitizedParams = new URLSearchParams(searchParams)
+    sanitizedParams.delete('tipo')
+    sanitizedParams.delete('canal')
+    sanitizedParams.delete('atencion')
+    sanitizedParams.delete('resolucion')
+    if (!VALID_ESTADO_VALUES.includes(sanitizedParams.get('estado') as ConsultaEstadoFilter)) sanitizedParams.delete('estado')
+    if (!isOptionValue(SORT_OPTIONS, sanitizedParams.get('orden'))) sanitizedParams.delete('orden')
+
+    if (sanitizedParams.toString() !== searchParams.toString()) {
+      setSearchParams(sanitizedParams, { replace: true })
+      return
+    }
+
+    const requestedStatus = searchParams.get('estado')
+    const requestedSort = searchParams.get('orden')
+
+    setEstadoFilter(VALID_ESTADO_VALUES.includes(requestedStatus as ConsultaEstadoFilter) ? requestedStatus as ConsultaEstadoFilter : 'todas')
+    setSortOption(isOptionValue(SORT_OPTIONS, requestedSort) ? requestedSort : 'recentes')
+    setSearchQuery(searchParams.get('buscar') ?? '')
+  }, [
+    searchParams,
+    setEstadoFilter,
+    setSearchQuery,
+    setSearchParams,
+    setSortOption,
+  ])
 
   if (!user) return null
 
   const showingDetail = Boolean(selectedConsultaId && selectedConsulta)
-  const showingDemoIntro = isLoading || (isShowingDemo && !demoStarted)
+  const showingDemoIntro = !isLoading && !error && isShowingDemo && !demoStarted
+  const hasActiveFilters = searchQuery.trim() !== '' || estadoFilter !== 'todas' || sortOption !== 'recentes'
+
+  const updateQueryParam = (key: string, value: string, defaultValue: string, replace = false) => {
+    const next = new URLSearchParams(searchParams)
+    if (value === defaultValue || value.trim() === '') next.delete(key)
+    else next.set(key, value)
+    setSearchParams(next, { replace })
+  }
+
+  const handleEstadoFilter = (filter: ConsultaEstadoFilter) => {
+    setEstadoFilter(filter)
+    const next = new URLSearchParams(searchParams)
+    next.delete('estado')
+    next.delete('atencion')
+    next.delete('resolucion')
+    if (filter !== 'todas') next.set('estado', filter)
+    setSearchParams(next)
+  }
 
   const handleBack = () => {
-    if (showingDetail) {
-      clearSelection()
-      return
-    }
-
-    if (isShowingDemo && demoStarted) {
-      setDemoStarted(false)
-      return
-    }
-
+    if (showingDetail) return clearSelection()
+    if (isShowingDemo && demoStarted) return setDemoStarted(false)
     navigate('/dashboard')
   }
 
+  const clearFilters = () => {
+    setSearchQuery('')
+    setEstadoFilter('todas')
+    setSortOption('recentes')
+    setSearchParams({})
+  }
+
   return (
-    <>
+    <div className="consultas-page">
       <Drawer
         business={business}
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         activeItem="consultas"
+        desktopPersistent
+        showBusinessAvatar
       />
 
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100svh',
-        background: 'var(--color-bg)',
-      }}>
-        <header style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '13px 20px 7px',
-          background: 'var(--color-bg)',
-          position: 'sticky',
-          top: 0,
-          zIndex: 10,
-        }}>
-          <button
-            type="button"
-            aria-label="Abrir navegación"
-            onClick={() => setDrawerOpen(true)}
-            style={{ color: 'var(--color-text-primary)', padding: 4 }}
-          >
-            <AppIcon name="menu" size={20} />
+      <div className="consultas-shell">
+        <header className="consultas-mobile-header">
+          <button type="button" aria-label="Abrir navegación" onClick={() => setDrawerOpen(true)}>
+            <AppIcon name="menu" size={22} />
           </button>
-          <span aria-hidden="true" style={{ marginLeft: 'auto', marginRight: 14 }}>
-            <AppIcon name="bell" size={19} strokeWidth={1.8} />
-          </span>
-          <Avatar name={user.nombre} size={30} />
+          <strong>Consultas</strong>
+          <Avatar name={user.nombre} src={business?.logo} size={38} />
         </header>
 
-        <main style={{
-          flex: 1,
-          padding: '18px 20px 24px',
-          overflowY: 'auto',
-          background: showingDemoIntro ? 'var(--color-bg-subtle)' : 'var(--color-bg)',
-        }}>
-          <button
-            type="button"
-            onClick={handleBack}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              marginBottom: showingDetail ? 22 : 12,
-              padding: 0,
-              color: 'var(--color-text-primary)',
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            <span
-              aria-hidden="true"
-              style={{
-                width: 20,
-                height: 20,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: '50%',
-                background: 'var(--color-surface-muted)',
-                fontSize: 14,
-                lineHeight: 1,
-              }}
-            >
-              {'<'}
-            </span>
-            Volver
-          </button>
+        <main className="consultas-main">
+          <PageBackButton onClick={handleBack} />
 
           {!showingDetail && (
-            <div style={{ marginBottom: 14 }}>
-              <h1 style={{ fontSize: 21, fontWeight: 700, marginBottom: 3 }}>Consultas</h1>
-              <p style={{ color: 'var(--color-text-secondary)', fontSize: 11, lineHeight: 1.4 }}>
-                Historial de conversaciones e interacciones recibidas.
-              </p>
-            </div>
-          )}
-
-          {!showingDetail && !showingDemoIntro && (
-            <section
-              aria-label="Filtros de consultas"
-              style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 15 }}
-            >
-              <label>
-                <span className="sr-only">Buscar</span>
-                <span style={{ position: 'relative', display: 'block' }}>
-                  <span aria-hidden="true" style={{
-                    position: 'absolute',
-                    left: 12,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    pointerEvents: 'none',
-                    zIndex: 1,
-                  }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <circle cx="11" cy="11" r="7" />
-                      <path d="m20 20-4-4" />
-                    </svg>
-                  </span>
-                  <input
-                    value={searchQuery}
-                    onChange={event => setSearchQuery(event.target.value)}
-                    placeholder="Buscar cliente o mensaje..."
-                    style={{ ...fieldStyle, paddingLeft: 37, boxShadow: 'var(--shadow-sm)' }}
-                  />
-                </span>
-              </label>
-
-              {[
-                { label: 'Estado', value: estadoFilter, onChange: setEstadoFilter, options: ESTADO_OPTIONS },
-                { label: 'Canal', value: canalFilter, onChange: setCanalFilter, options: CANAL_OPTIONS },
-                { label: 'Orden', value: sortOption, onChange: setSortOption, options: SORT_OPTIONS },
-              ].map(field => (
-                <label key={field.label} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span style={labelStyle}>{field.label}</span>
-                  <select
-                    value={field.value}
-                    onChange={event => field.onChange(event.target.value as never)}
-                    style={fieldStyle}
-                  >
-                    {field.options.map(option => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
-              ))}
+            <section className="consultas-heading">
+              <span>Conversaciones</span>
+              <h1>Consultas</h1>
+              <p>Gestioná las conversaciones con tus clientes.</p>
+              {!isLoading && !error && consultas.length > 0 && (
+                <strong>{consultas.length} {consultas.length === 1 ? 'consulta recibida' : 'consultas recibidas'}</strong>
+              )}
             </section>
           )}
 
-          {!showingDetail && isShowingDemo && !isLoading && !showingDemoIntro && (
-            <aside
-              aria-label="Consultas de ejemplo"
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 11,
-                padding: '12px 14px',
-                marginBottom: 15,
-                border: '1px solid var(--color-demo-border)',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--color-demo-bg)',
-                color: 'var(--color-secondary)',
-                boxShadow: 'var(--shadow-sm)',
-              }}
-            >
-              <span aria-hidden="true" style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                width: 28,
-                height: 28,
-                borderRadius: 9,
-                background: 'var(--color-primary)',
-                color: '#FFFFFF',
-              }}>
-                <AppIcon name="faq" size={16} strokeWidth={2} />
-              </span>
-              <div>
-                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-                  Estas son consultas de ejemplo
-                </p>
-                <p style={{ margin: '3px 0 0', fontSize: 11, lineHeight: 1.45 }}>
-                  Podés explorarlas para conocer cómo funciona esta sección. Cuando recibas tu primera consulta real, estos ejemplos desaparecerán automáticamente.
-                </p>
-              </div>
-            </aside>
-          )}
-
-          {showingDemoIntro ? (
-            <section style={{
-              padding: '48px 24px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 16,
-              textAlign: 'center',
-              background: 'var(--color-bg)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 16,
-              boxShadow: 'var(--shadow-sm)',
-            }}>
-              <span aria-hidden="true" style={{
-                width: 80,
-                height: 80,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: 20,
-                background: 'rgba(19, 168, 162, 0.11)',
-                color: 'var(--color-primary)',
-              }}>
-                <AppIcon name="chat" size={38} strokeWidth={1.8} />
-              </span>
-
-              <h2 style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.35, margin: 0, padding: 10, maxWidth: 280 }}>
-                Todavía no recibiste consultas
-              </h2>
-
-              <p style={{
-                maxWidth: 260,
-                margin: 0,
-                padding: 8,
-                color: 'var(--color-text-secondary)',
-                fontSize: 14,
-                lineHeight: 1.5,
-                textAlign: 'center',
-              }}>
-                Cuando un cliente inicie una conversación desde el chatbot, la consulta aparecerá aquí automáticamente.
-              </p>
-
-              <button
-                type="button"
-                onClick={() => setDemoStarted(true)}
-                style={{
-                  margin: 12,
-                  padding: '14px 40px',
-                  borderRadius: 'var(--radius-md)',
-                  background: brand.primaryGradient,
-                  color: '#FFFFFF',
-                  boxShadow: brand.shadowAction,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  letterSpacing: 1,
-                }}
-              >
-                COMENZAR
-              </button>
+          {isLoading ? (
+            <section className="consultas-skeleton" aria-label="Cargando consultas" aria-busy="true">
+              <div className="consultas-skeleton__toolbar" />
+              {[1, 2, 3].map(item => <div className="consultas-skeleton__card" key={item} />)}
             </section>
-          ) : isLoading ? (
-            <section style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 13 }}>
-              Cargando consultas...
+          ) : error ? (
+            <section className="consultas-state consultas-state--error" role="alert">
+              <span className="consultas-state__icon"><AppIcon name="alert" size={36} /></span>
+              <h2>No pudimos cargar las consultas</h2>
+              <p>Revisá tu conexión o intentá nuevamente.</p>
+              <button type="button" onClick={() => void reloadConsultas()}>Reintentar</button>
             </section>
-          ) : consultas.length === 0 ? (
-            <section style={{
-              padding: '32px 20px',
-              textAlign: 'center',
-              background: 'var(--color-bg)',
-              border: '1px dashed var(--color-border)',
-              borderRadius: 'var(--radius-md)',
-            }}>
-              <AppIcon name="chat" size={34} />
-              <h2 style={{ fontSize: 17, margin: '10px 0 6px' }}>Todavía no hay consultas</h2>
-              <p style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>
-                Cuando lleguen conversaciones del chat, van a aparecer acá.
-              </p>
+          ) : showingDemoIntro ? (
+            <section className="consultas-state">
+              <span className="consultas-state__icon"><AppIcon name="chat" size={40} /></span>
+              <h2>Todavía no recibiste consultas</h2>
+              <p>Cuando un cliente inicie una conversación desde tu chatbot, la consulta aparecerá acá automáticamente.</p>
+              <button type="button" onClick={() => setDemoStarted(true)}>Ver demostración</button>
+              <small>La demostración contiene datos de ejemplo.</small>
             </section>
           ) : showingDetail ? (
             <ConsultaDetail
               consulta={selectedConsulta}
+              resolution={selectedConsulta ? resolutionByConsultaId.get(selectedConsulta.id) : undefined}
               onUpdateStatus={updateConsultaStatus}
+              onBack={clearSelection}
+              isUpdating={updatingConsultaId === selectedConsulta?.id}
+              updateError={updateError}
             />
           ) : (
-            <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {filteredConsultas.length === 0 ? (
-                <div style={{
-                  padding: '24px 16px',
-                  textAlign: 'center',
-                  color: 'var(--color-text-secondary)',
-                  fontSize: 13,
-                  borderRadius: 'var(--radius-md)',
-                }}>
-                  No hay consultas que coincidan con estos filtros.
-                </div>
-              ) : filteredConsultas.map(consulta => (
-                <ConsultaCard
-                  key={consulta.id}
-                  consulta={consulta}
-                  selected={selectedConsultaId === consulta.id}
-                  onSelect={selectConsulta}
-                />
-              ))}
-            </section>
+            <>
+              <section className="consultas-toolbar" aria-label="Filtros de consultas">
+                <label className="consultas-search">
+                  <span className="sr-only">Buscar consultas</span>
+                  <AppIcon name="search" size={18} />
+                  <input
+                    value={searchQuery}
+                    onChange={event => {
+                      setSearchQuery(event.target.value)
+                      updateQueryParam('buscar', event.target.value, '', true)
+                    }}
+                    placeholder="Buscar cliente o mensaje..."
+                  />
+                </label>
+                <label className="consultas-filter">
+                  <span>Estado</span>
+                  <select value={estadoFilter} onChange={event => handleEstadoFilter(event.target.value as ConsultaEstadoFilter)}>
+                    {ESTADO_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+                <label className="consultas-filter">
+                  <span>Orden</span>
+                  <select value={sortOption} onChange={event => {
+                    const value = event.target.value as ConsultaSortOption
+                    setSortOption(value)
+                    updateQueryParam('orden', value, 'recentes')
+                  }}>
+                    {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              </section>
+
+              {isShowingDemo && (
+                <aside className="consultas-demo" aria-label="Consultas de ejemplo">
+                  <AppIcon name="alert" size={19} />
+                  <div><strong>Estas son consultas de ejemplo</strong><p>Podés explorarlas para conocer la sección. Se reemplazarán cuando recibas consultas reales.</p></div>
+                </aside>
+              )}
+
+              {consultas.length === 0 ? (
+                <section className="consultas-state">
+                  <span className="consultas-state__icon"><AppIcon name="chat" size={40} /></span>
+                  <h2>Todavía no recibiste consultas</h2>
+                  <p>Cuando un cliente inicie una conversación desde tu chatbot, aparecerá acá automáticamente.</p>
+                </section>
+              ) : filteredConsultas.length === 0 ? (
+                <section className="consultas-state consultas-state--compact">
+                  <span className="consultas-state__icon"><AppIcon name="search" size={34} /></span>
+                  <h2>No encontramos consultas con estos filtros</h2>
+                  <p>Probá con otra búsqueda o restablecé los filtros.</p>
+                  {hasActiveFilters && <button type="button" onClick={clearFilters}>Limpiar filtros</button>}
+                </section>
+              ) : (
+                <section className="consultas-list" aria-label="Listado de consultas">
+                  {filteredConsultas.map(consulta => (
+                    <ConsultaCard
+                      key={consulta.id}
+                      consulta={consulta}
+                      resolution={resolutionByConsultaId.get(consulta.id)}
+                      selected={selectedConsultaId === consulta.id}
+                      onSelect={selectConsulta}
+                    />
+                  ))}
+                </section>
+              )}
+            </>
           )}
         </main>
+
+        <button
+          type="button"
+          className="consultas-bot"
+          disabled={!business?.slug}
+          aria-label="Abrir asistente: Probá tu chat"
+          onClick={() => business?.slug && openChatPreview(business.slug, navigate)}
+        >
+          <span className="consultas-bot__label"><i aria-hidden="true" />Probá tu chat</span>
+          <span className="consultas-bot__avatar" aria-hidden="true"><img src="/isoBot-transparente.png" alt="" /></span>
+        </button>
       </div>
-    </>
+    </div>
   )
 }

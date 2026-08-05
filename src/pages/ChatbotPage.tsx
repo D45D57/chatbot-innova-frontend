@@ -1,23 +1,137 @@
-import { useEffect, useRef } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ChatHeader } from '../components/chat/ChatHeader'
 import { ChatInput } from '../components/chat/ChatInput'
 import { MessageBubble, TypingIndicator } from '../components/chat/MessageBubble'
 import { FaqListMessage } from '../components/chat/FaqListMessage'
 import { ProductCatalogMessage } from '../components/chat/ProductCatalogMessage'
 import { QuickReplies } from '../components/chat/QuickReplies'
-import { useBusiness } from '../context/BusinessContext'
+import { QuoteSummaryCard } from '../components/chat/QuoteSummaryCard'
+import { GeneratedQuoteCard } from '../components/chat/GeneratedQuoteCard'
+import '../components/chat/quoteCards.css'
 import { useChat } from '../hooks/useChat'
-import type { Business } from '../types'
-import { useAuth } from '../context/AuthContext'
+import type { Business, FAQ, Product } from '../types'
+import { getPublicBusinessApi, getPublicFaqsApi, getPublicProductsApi } from '../services/publicApi'
+import { resolveChatAppearance } from '../services/chatAppearance'
+import { FloatingChatWindow } from '../components/chat/FloatingChatWindow'
+import { PublicChatBackground } from '../components/chat/PublicChatBackground'
+import { useMediaQuery } from '../hooks/useMediaQuery'
+import { restoreChatPreviewFocus } from '../utils/chatRoutes'
+import { useNetworkStatus } from '../hooks/useNetworkStatus'
+import { isNetworkError } from '../utils/networkError'
+import { ConnectionNotice } from '../components/chat/ConnectionNotice'
 
 // Página pública: www.emprendebot/[slug]
-export function ChatbotPage() {
+export function ChatbotPage({ preview = false }: { preview?: boolean }) {
   const { slug } = useParams<{ slug: string }>()
   const navigate = useNavigate()
-  const { loadBusinessBySlug } = useBusiness()
-  const { user } = useAuth()
-  const business = slug ? loadBusinessBySlug(slug) : null
+  const location = useLocation()
+  const [business, setBusiness] = useState<Business | null>(null)
+  const [isBusinessLoading, setIsBusinessLoading] = useState(Boolean(slug))
+  const [publicFaqs, setPublicFaqs] = useState<FAQ[] | null>(null)
+  const [publicProducts, setPublicProducts] = useState<Product[] | null>(null)
+  const isBrowserOnline = useNetworkStatus()
+  const [hasNetworkError, setHasNetworkError] = useState(false)
+  const [isRetrying, setIsRetrying] = useState(false)
+  const [retryStatus, setRetryStatus] = useState<'offline' | 'server' | null>(null)
+
+  const closePreview = useCallback(() => {
+    const hasBackground = Boolean((location.state as { backgroundPath?: string } | null)?.backgroundPath)
+    if (hasBackground) navigate(-1)
+    else navigate('/dashboard')
+    restoreChatPreviewFocus()
+  }, [location.state, navigate])
+
+  useEffect(() => {
+    if (!preview) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closePreview()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [closePreview, preview])
+
+  useEffect(() => {
+    if (!slug) return
+    getPublicBusinessApi(slug)
+      .then(setBusiness)
+      .catch(error => {
+        if (isNetworkError(error)) setHasNetworkError(true)
+        else setBusiness(null)
+      })
+      .finally(() => setIsBusinessLoading(false))
+  }, [slug])
+
+  useEffect(() => {
+    if (!slug) return
+    getPublicFaqsApi(slug)
+      .then(faqs => setPublicFaqs(faqs))
+      .catch(error => {
+        if (isNetworkError(error)) setHasNetworkError(true)
+        else setPublicFaqs([])
+      })
+
+    getPublicProductsApi(slug)
+      .then(products => setPublicProducts(products))
+      // Compatibilidad: si el endpoint todavía no existe, se conservan
+      // los productos incluidos por /init.
+      .catch(error => {
+        if (isNetworkError(error)) setHasNetworkError(true)
+        setPublicProducts(null)
+      })
+  }, [slug])
+
+  const retryConnection = useCallback(async () => {
+    if (!slug || isRetrying) return
+
+    setIsRetrying(true)
+    setRetryStatus(null)
+
+    if (!navigator.onLine) {
+      await new Promise(resolve => window.setTimeout(resolve, 350))
+      setHasNetworkError(true)
+      setRetryStatus('offline')
+      setIsRetrying(false)
+      return
+    }
+
+    try {
+      const [nextBusiness, nextFaqs, nextProducts] = await Promise.all([
+        getPublicBusinessApi(slug),
+        getPublicFaqsApi(slug),
+        getPublicProductsApi(slug),
+      ])
+      setBusiness(nextBusiness)
+      setPublicFaqs(nextFaqs)
+      setPublicProducts(nextProducts)
+      setHasNetworkError(false)
+      setRetryStatus(null)
+    } catch (error) {
+      if (isNetworkError(error)) {
+        setHasNetworkError(true)
+        setRetryStatus('offline')
+      } else {
+        setRetryStatus('server')
+      }
+    } finally {
+      setIsRetrying(false)
+    }
+  }, [isRetrying, slug])
+
+  if (isBusinessLoading && !business) {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'grid', placeItems: 'center',
+        color: 'var(--color-text-secondary)', fontSize: '14px',
+      }}>
+        Cargando chatbot...
+      </div>
+    )
+  }
+
+  if (!business && (!isBrowserOnline || hasNetworkError)) {
+    return <main className="public-chat__load-error"><ConnectionNotice isRetrying={isRetrying} retryStatus={retryStatus} onRetry={() => void retryConnection()} /></main>
+  }
 
   if (!business) {
     return (
@@ -45,20 +159,67 @@ export function ChatbotPage() {
     )
   }
 
-  return (
+  const publicBusiness: Business = {
+    ...business,
+    ...(publicFaqs !== null ? { faq: publicFaqs } : {}),
+    ...(publicProducts !== null ? { productos: publicProducts } : {}),
+  }
+
+  const chat = (
     <PublicChat
       key={business.id}
-      business={business}
-      onBackToDashboard={user ? () => navigate('/dashboard') : undefined}
+      business={publicBusiness}
+      preview={preview}
+      onClose={preview ? closePreview : undefined}
+      isOnline={isBrowserOnline && !hasNetworkError}
+      isRetrying={isRetrying}
+      retryStatus={retryStatus}
+      onNetworkError={() => setHasNetworkError(true)}
+      onRetry={() => void retryConnection()}
     />
   )
+
+  return preview
+    ? <div className="chat-preview-overlay">{chat}</div>
+    : <PublicChatBackground>{chat}</PublicChatBackground>
 }
 
-function PublicChat({ business, onBackToDashboard }: { business: Business; onBackToDashboard?: () => void }) {
-  const { messages, isTyping, sendMessage, submitOrder, reset } = useChat(business)
+interface PublicChatProps {
+  business: Business
+  preview: boolean
+  onClose?: () => void
+  isOnline: boolean
+  isRetrying: boolean
+  retryStatus: 'offline' | 'server' | null
+  onNetworkError: () => void
+  onRetry: () => void
+}
+
+function PublicChat({ business, preview, onClose, isOnline, isRetrying, retryStatus, onNetworkError, onRetry }: PublicChatProps) {
+  const {
+    messages,
+    isTyping,
+    sendMessage,
+    handleQuickReply,
+    submitOrder,
+    requestQuote,
+    submittingQuoteMessageId,
+    awaitingInput,
+    cancelledQuoteMessageIds,
+    reset,
+  } = useChat(business, { isOnline, onNetworkError })
+  const previewInitializedRef = useRef(false)
+  const appearance = resolveChatAppearance(business)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isInitialScrollRef = useRef(true)
+  const isDesktop = useMediaQuery('(min-width: 481px)')
+
+  useEffect(() => {
+    if (!preview || previewInitializedRef.current) return
+    previewInitializedRef.current = true
+    reset()
+  }, [preview, reset])
 
   useEffect(() => {
     document.documentElement.classList.add('public-chat-active')
@@ -94,6 +255,7 @@ function PublicChat({ business, onBackToDashboard }: { business: Business; onBac
 
   const lastProductsMessageId = [...messages].reverse().find(m => m.products?.length)?.id
   const lastFaqsMessageId = [...messages].reverse().find(m => m.faqs?.length)?.id
+  const lastConfirmMessageId = [...messages].reverse().find(message => message.confirmQuote)?.id
 
   const lastBotWithReplies = [...messages].reverse().find(
     message => message.role === 'bot' && message.quickReplies && message.quickReplies.length > 0
@@ -101,24 +263,116 @@ function PublicChat({ business, onBackToDashboard }: { business: Business; onBac
   const activeQuickReplies = isTyping ? [] : (lastBotWithReplies?.quickReplies ?? [])
 
   return (
-    <div className="public-chat">
-      <ChatHeader business={business} onRefresh={reset} onBackToDashboard={onBackToDashboard} />
+    <FloatingChatWindow draggable={isDesktop} preview={preview}>
+      {dragHandleProps => <div
+        className="public-chat"
+        style={{
+        '--chat-primary': appearance.primary,
+        '--chat-secondary': appearance.secondary,
+        '--chat-gradient': `linear-gradient(90deg, ${appearance.primary}, ${appearance.secondary})`,
+        '--color-primary': appearance.primary,
+        '--color-secondary': appearance.secondary,
+        '--color-bg-answer': appearance.primary,
+      } as CSSProperties}
+    >
+      <ChatHeader
+        business={business}
+        onRefresh={preview ? reset : undefined}
+        onClose={onClose}
+        dragHandleProps={dragHandleProps}
+        draggable={isDesktop}
+        isOnline={isOnline}
+      />
+
+      {!isOnline && <ConnectionNotice isRetrying={isRetrying} retryStatus={retryStatus} onRetry={onRetry} />}
 
       <div ref={messagesContainerRef} className="public-chat__messages">
         {messages.map(message => (
           <div key={message.id}>
             {message.text && <MessageBubble message={message} />}
-            {message.products && message.products.length > 0 && message.id === lastProductsMessageId && !isTyping && (
-              <ProductCatalogMessage products={message.products} onConfirm={submitOrder} />
+            {message.quoteSummary && (
+              <QuoteSummaryCard
+                data={message.quoteSummary}
+                isSubmitting={submittingQuoteMessageId === message.id}
+                isCancelled={cancelledQuoteMessageIds.has(message.id)}
+                isSubmitted={messages.some(
+                  candidate => candidate.generatedQuote?.sourceSummaryMessageId === message.id,
+                )}
+                onContinue={() => isOnline ? void requestQuote(message.id, message.quoteSummary!, {
+                  id: `request-budget-${message.id}`,
+                  label: 'Solicitar presupuesto',
+                  action: 'REQUEST_BUDGET',
+                  value: message.id,
+                }) : onNetworkError()}
+                onCancel={() => handleQuickReply({
+                  id: `cancel-budget-${message.id}`,
+                  label: 'Cancelar presupuesto',
+                  action: 'CANCEL_BUDGET',
+                  value: message.id,
+                })}
+              />
+            )}
+            {message.generatedQuote && (
+              <GeneratedQuoteCard data={message.generatedQuote} businessName={business.nombre} />
+            )}
+            {message.confirmQuote &&
+              message.id === lastConfirmMessageId &&
+              awaitingInput === 'quote-confirm' &&
+              !isTyping && (
+                <div style={{ margin: '4px 0 12px 44px', width: 'calc(100% - 44px)', maxWidth: 520 }}>
+                  <div className="chat-quote-card__actions chat-quote-card__actions--stacked">
+                    <button
+                      type="button"
+                      className="chat-quote-card__primary"
+                      onClick={() => isOnline ? handleQuickReply({
+                        id: 'confirm-budget',
+                        label: 'Confirmar presupuesto',
+                        action: 'CONFIRM_BUDGET',
+                      }) : onNetworkError()}
+                    >
+                      Confirmar presupuesto
+                    </button>
+                    <button
+                      type="button"
+                      className="chat-quote-card__secondary"
+                      onClick={() => handleQuickReply({
+                        id: 'cancel-confirm-budget',
+                        label: 'Cancelar presupuesto',
+                        action: 'CANCEL_BUDGET',
+                      })}
+                    >
+                      Cancelar presupuesto
+                    </button>
+                  </div>
+                </div>
+              )}
+            {message.products && message.products.length > 0 && message.id === lastProductsMessageId && message.id === messages[messages.length - 1]?.id && !isTyping && (
+              <ProductCatalogMessage
+                products={message.products}
+                onConfirm={submitOrder}
+                onBack={() => handleQuickReply({
+                  id: 'catalog-back-main-menu',
+                  label: 'Volver al menú principal',
+                  action: 'SHOW_MAIN_MENU',
+                })}
+              />
             )}
             {message.faqs && message.faqs.length > 0 && message.id === lastFaqsMessageId && !isTyping && (
-              <FaqListMessage faqs={message.faqs} onSelect={sendMessage} />
+              <FaqListMessage
+                faqs={message.faqs}
+                onSelect={faq => handleQuickReply({
+                  id: `select-faq-${faq.id}`,
+                  label: faq.pregunta,
+                  action: 'SELECT_FAQ',
+                  value: faq.id,
+                })}
+              />
             )}
             {message.id === messages[messages.length - 1]?.id &&
               message.role === 'bot' &&
               !isTyping &&
               message.quickReplies && message.quickReplies.length > 0 && (
-                <QuickReplies options={message.quickReplies} onSelect={sendMessage} />
+                <QuickReplies options={message.quickReplies} onSelect={handleQuickReply} />
               )}
           </div>
         ))}
@@ -127,14 +381,15 @@ function PublicChat({ business, onBackToDashboard }: { business: Business; onBac
         <div ref={messagesEndRef} className="public-chat__end" aria-hidden="true" />
       </div>
 
-      {!isTyping && activeQuickReplies.length > 0 &&
+      {!isTyping && awaitingInput !== 'quote-confirm' && activeQuickReplies.length > 0 &&
         messages[messages.length - 1]?.role !== 'bot' && (
           <div className="public-chat__suggestions">
-            <QuickReplies options={activeQuickReplies} onSelect={sendMessage} />
+            <QuickReplies options={activeQuickReplies} onSelect={handleQuickReply} />
           </div>
         )}
 
-      <ChatInput onSend={sendMessage} disabled={isTyping} />
-    </div>
+      <ChatInput onSend={sendMessage} disabled={isTyping || !isOnline} />
+      </div>}
+    </FloatingChatWindow>
   )
 }

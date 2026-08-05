@@ -1,13 +1,18 @@
 import { useState, type FormEvent } from 'react'
+import type { CredentialResponse } from '@react-oauth/google'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useBusiness } from '../context/BusinessContext'
 import { Input } from '../components/ui/Input'
 import { Button } from '../components/ui/Button'
+import { AuthLayout, PasswordVisibilityButton } from '../components/auth/AuthLayout'
+import { GoogleAuthButton } from '../components/auth/GoogleAuthButton'
 import { brand } from '../styles/brand'
 
 export function RegisterPage() {
   const navigate = useNavigate()
-  const { register } = useAuth()
+  const { register, loginWithGoogle } = useAuth()
+  const { loadBusiness } = useBusiness()
 
   const [nombre, setNombre] = useState('')
   const [email, setEmail] = useState('')
@@ -17,6 +22,7 @@ export function RegisterPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
 
   const handleSubmit = async (e: FormEvent) => {
@@ -52,14 +58,27 @@ export function RegisterPage() {
     }
   }
 
+  const handleGoogleLogin = async (response: CredentialResponse) => {
+    setError('')
+    if (!response.credential) {
+      setError('Google no devolvió una credencial válida.')
+      return
+    }
+
+    setGoogleLoading(true)
+    try {
+      const user = await loginWithGoogle(response.credential)
+      const business = await loadBusiness(user.id)
+      navigate(business ? '/dashboard' : '/configurar', { replace: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No pudimos continuar con Google.')
+    } finally {
+      setGoogleLoading(false)
+    }
+  }
+
   return (
-    <div style={{
-      flex: 1,
-      display: 'flex',
-      flexDirection: 'column',
-      minHeight: '100svh',
-      background: 'var(--color-bg)',
-    }}>
+    <>
       {/* Modal cuenta creada */}
       {showSuccessModal && (
         <div style={{
@@ -79,7 +98,7 @@ export function RegisterPage() {
             textAlign: 'center',
           }}>
             <button
-              onClick={() => navigate('/configurar')}
+              onClick={() => navigate('/configurar', { replace: true })}
               style={{
                 position: 'absolute', top: 12, right: 14,
                 background: 'none', border: 'none',
@@ -102,7 +121,7 @@ export function RegisterPage() {
             </p>
 
             <button
-              onClick={() => navigate('/configurar')}
+              onClick={() => navigate('/configurar', { replace: true })}
               style={{
                 marginTop: '8px',
                 width: '100%', height: 52,
@@ -120,30 +139,14 @@ export function RegisterPage() {
           </div>
         </div>
       )}
-      {/* Back */}
-      <div style={{ padding: '16px 24px' }}>
-        <button
-          onClick={() => navigate(-1)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            fontSize: '14px', color: 'var(--color-text-secondary)',
-            border: 'none', background: 'none', cursor: 'pointer',
-            fontFamily: 'var(--font-family)',
-          }}
-        >
-          ← Iniciar sesion
-        </button>
-      </div>
-
-      <div style={{ flex: 1, padding: '8px 24px 40px' }}>
-        <h1 style={{ fontSize: '26px', fontWeight: 700, marginBottom: '6px' }}>
-          Empezá hoy
-        </h1>
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '32px' }}>
-          Completá tus datos para crear tu cuenta.
-        </p>
-
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <AuthLayout
+        title="Empezá hoy"
+        subtitle="Completá tus datos para crear tu cuenta."
+        onBack={() => navigate('/')}
+        illustrationSrc="/crear-cuenta.png"
+        illustrationAlt="EmprendeBot creando una cuenta"
+      >
+        <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <Input
             label="Nombre completo"
             placeholder="Ej: María García"
@@ -202,10 +205,28 @@ export function RegisterPage() {
             </p>
           )}
 
-          <Button type="submit" fullWidth size="lg" loading={loading} style={{ background: brand.primaryGradient, borderRadius: 'var(--radius-md)', border: 'none' }}>
+          <Button type="submit" fullWidth size="lg" loading={loading} disabled={googleLoading} style={{ background: brand.primaryGradient, borderRadius: 'var(--radius-md)', border: 'none' }}>
             CREAR CUENTA
           </Button>
         </form>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '18px 0', color: 'var(--color-text-secondary)' }}>
+          <span style={{ height: 1, flex: 1, background: 'var(--color-border)' }} />
+          <span style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>o continuar con</span>
+          <span style={{ height: 1, flex: 1, background: 'var(--color-border)' }} />
+        </div>
+
+        <GoogleAuthButton
+          onSuccess={handleGoogleLogin}
+          onError={() => setError('No pudimos iniciar sesión con Google.')}
+          disabled={loading || googleLoading}
+        />
+
+        {googleLoading && (
+          <p style={{ marginTop: '8px', color: 'var(--color-text-secondary)', fontSize: '12px', textAlign: 'center' }}>
+            Verificando identidad con Google...
+          </p>
+        )}
 
         <p style={{
           textAlign: 'center',
@@ -218,42 +239,7 @@ export function RegisterPage() {
             Iniciá sesión
           </Link>
         </p>
-      </div>
-    </div>
-  )
-}
-
-function PasswordVisibilityButton({ visible, onClick }: { visible: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-      title={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-      style={{
-        width: '52px',
-        height: '52px',
-        display: 'grid',
-        placeItems: 'center',
-        border: 'none',
-        background: 'transparent',
-        color: 'var(--color-text-secondary)',
-        cursor: 'pointer',
-      }}
-    >
-      {visible ? (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <path d="m3 3 18 18" />
-          <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
-          <path d="M9.9 4.2A10.8 10.8 0 0 1 12 4c5 0 9 4.5 10 8a13.7 13.7 0 0 1-2.1 4.2" />
-          <path d="M6.6 6.6A13.6 13.6 0 0 0 2 12c1 3.5 5 8 10 8a10.7 10.7 0 0 0 5.4-1.5" />
-        </svg>
-      ) : (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-      )}
-    </button>
+      </AuthLayout>
+    </>
   )
 }
