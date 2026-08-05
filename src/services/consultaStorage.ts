@@ -9,12 +9,13 @@ type StoredConsultaEstado =
   | 'atendida'
   | 'respondida'
   | 'derivada'
+  | 'INICIADA'
   | 'NUEVA'
   | 'EN_PROCESO'
   | 'RESUELTA'
   | 'CERRADA'
 
-const ESTADOS_VALIDOS: ConsultaEstado[] = ['nueva', 'en_proceso', 'resuelta', 'cerrada']
+const ESTADOS_VALIDOS: ConsultaEstado[] = ['iniciada', 'nueva', 'en_proceso', 'resuelta', 'cerrada']
 
 export type ConsultaDerivadaApiFilter =
   | 'todas'
@@ -179,6 +180,10 @@ function mapLegacyEstado(
 
   if (estadoNombre === 'respondida' || estadoNombre === 'RESUELTA') {
     return { estado: 'resuelta', derivada: false, cerradaPor: null }
+  }
+
+  if (estadoNombre === 'INICIADA') {
+    return { estado: 'iniciada', derivada: false, cerradaPor: null }
   }
 
   if (estadoNombre === 'NUEVA') {

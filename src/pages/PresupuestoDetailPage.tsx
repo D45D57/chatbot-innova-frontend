@@ -12,6 +12,7 @@ import {
   getPresupuestoById,
   updatePresupuestoEstado,
 } from '../services/presupuestoApi'
+import { updateConsultaEstado } from '../services/consultaStorage'
 import type {
   PresupuestoDetalle,
   PresupuestoEstado,
@@ -111,6 +112,12 @@ export function PresupuestoDetailPage() {
     const timeoutId = window.setTimeout(() => void loadBudget(), 0)
     return () => window.clearTimeout(timeoutId)
   }, [loadBudget])
+
+  // Si el emprendedor ve el presupuesto y la consulta es nueva/iniciada, transicionarla a en_proceso
+  useEffect(() => {
+    if (!presupuesto?.consultaId || !user) return
+    void updateConsultaEstado(presupuesto.consultaId, 'en_proceso', user.id).catch(() => { /* ignorar */ })
+  }, [presupuesto?.consultaId, user])
 
   if (!user) return null
 
@@ -302,7 +309,7 @@ export function PresupuestoDetailPage() {
                   </div>
                   <div className="budget-actions__buttons">
                     {canQuote && (
-                      <button type="button" disabled={isSaving} onClick={() => setShowQuoteForm(value => !value)}>
+                      <button type="button" disabled={isSaving} className={showQuoteForm ? 'is-danger' : ''} onClick={() => setShowQuoteForm(value => !value)}>
                         {showQuoteForm ? 'Cancelar cotización' : presupuesto.linkPdf ? 'Volver a cotizar' : 'Cotizar'}
                       </button>
                     )}

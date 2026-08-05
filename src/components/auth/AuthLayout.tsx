@@ -7,6 +7,7 @@ interface AuthLayoutProps {
   children: ReactNode
   illustrationSrc?: string
   illustrationAlt?: string
+  compact?: boolean
 }
 
 export function AuthLayout({
@@ -16,9 +17,10 @@ export function AuthLayout({
   children,
   illustrationSrc,
   illustrationAlt = '',
+  compact = false,
 }: AuthLayoutProps) {
   return (
-    <div className="auth-layout">
+    <div className={`auth-layout${compact ? ' auth-layout--compact' : ''}`}>
       <div className="auth-layout__shell">
         <header className="auth-layout__brand">
           <img src="/isoBot-transparente.png" alt="" aria-hidden="true" />
@@ -280,6 +282,32 @@ export function AuthLayout({
             border-radius: 20px;
             box-shadow: 0 16px 40px rgba(15, 23, 42, .12);
           }
+        }
+
+        .auth-layout--compact .auth-layout__main--illustrated {
+          grid-template-columns: minmax(0, 1.1fr) minmax(380px, .9fr);
+          gap: clamp(28px, 4vw, 64px);
+          align-items: flex-start;
+          padding-top: 4px;
+        }
+
+        .auth-layout--compact .auth-layout__illustration {
+          align-items: flex-start;
+          padding-top: 56px;
+        }
+
+        .auth-layout--compact .auth-layout__illustration img {
+          width: min(100%, 440px);
+          max-height: 480px;
+        }
+
+        .auth-layout--compact .auth-layout__card {
+          width: min(100%, 500px);
+          padding: clamp(20px, 2.5vw, 26px);
+        }
+
+        .auth-layout--compact .auth-layout__heading h1 {
+          font-size: clamp(22px, 2.5vw, 26px);
         }
 
         @media (prefers-reduced-motion: reduce) {

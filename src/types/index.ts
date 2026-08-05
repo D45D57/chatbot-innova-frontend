@@ -256,7 +256,7 @@ export interface ChatSession {
 }
 
 // ===== CONSULTAS =====
-export type ConsultaEstado = 'nueva' | 'en_proceso' | 'resuelta' | 'cerrada'
+export type ConsultaEstado = 'iniciada' | 'nueva' | 'en_proceso' | 'resuelta' | 'cerrada'
 export type ConsultaCerradaPor = 'bot' | 'emprendedor'
 export type CanalConsulta = 'web' | 'whatsapp'
 export type TipoConsulta = 'general' | 'catalogo' | 'presupuesto' | 'soporte' | 'derivacion'

@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useLocation, type Location } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
+import { useBusiness } from './context/BusinessContext'
 
 import { SplashPage } from './pages/SplashPage'
 import { PresentationPage } from './pages/PresentationPage'
@@ -19,8 +20,15 @@ import { CHAT_PREVIEW_ROUTE, PUBLIC_CHAT_ROUTE } from './utils/chatRoutes'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()
+  const { business } = useBusiness()
+  const location = useLocation()
+
   if (isLoading) return null
   if (!user) return <Navigate to="/login" replace />
+  // Solo redirigir al setup si el business ya fue cargado y no tiene nombre.
+  // Si business es null todavía (loading), dejamos pasar para evitar bloqueos.
+  if (business !== null && !business.nombre && location.pathname !== '/configurar')
+    return <Navigate to="/configurar" replace />
   return <>{children}</>
 }
 

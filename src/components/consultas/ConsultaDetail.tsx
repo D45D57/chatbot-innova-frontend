@@ -14,8 +14,9 @@ interface ConsultaDetailProps {
 }
 
 const ESTADO_STYLES: Record<ConsultaEstado, { label: string; color: string; background: string }> = {
+  iniciada: { label: 'Iniciada', color: 'var(--status-new-text)', background: 'var(--status-new-bg)' },
   nueva: { label: 'Nueva', color: 'var(--status-new-text)', background: 'var(--status-new-bg)' },
-  en_proceso: { label: 'En proceso', color: 'var(--status-progress-text)', background: 'var(--status-progress-bg)' },
+  en_proceso: { label: 'En seguimiento', color: 'var(--status-progress-text)', background: 'var(--status-progress-bg)' },
   resuelta: { label: 'Resuelta', color: 'var(--status-closed-text)', background: 'var(--status-closed-bg)' },
   cerrada: { label: 'Cerrada', color: 'var(--status-closed-text)', background: 'var(--status-closed-bg)' },
 }
@@ -45,7 +46,8 @@ function getMessagePresentation(emisor: Mensaje['emisor']) {
 }
 
 function getStatusAction(estado: ConsultaEstado): { label: string; nextEstado: ConsultaEstado } {
-  if (estado === 'nueva') return { label: 'Marcar en proceso', nextEstado: 'en_proceso' }
+  if (estado === 'iniciada') return { label: 'Marcar en seguimiento', nextEstado: 'en_proceso' }
+  if (estado === 'nueva') return { label: 'Marcar en seguimiento', nextEstado: 'en_proceso' }
   if (estado === 'en_proceso') return { label: 'Marcar cerrada', nextEstado: 'cerrada' }
   if (estado === 'resuelta') return { label: 'Marcar cerrada', nextEstado: 'cerrada' }
   return { label: 'Reabrir consulta', nextEstado: 'en_proceso' }
@@ -63,11 +65,14 @@ export function ConsultaDetail({ consulta, onUpdateStatus, onBack, isUpdating = 
   const statusAction = getStatusAction(consulta.estado)
   const isClosed = consulta.estado === 'cerrada'
   const resolvedByBot = resolution?.resolvedByBot === true
+  const overrideLabel = resolution?.overrideLabel
+  const effectiveStyle = overrideLabel ? ESTADO_STYLES['en_proceso'] : estadoStyle
+  const effectiveEstadoLabel = resolvedByBot ? 'Resuelta por el bot' : (overrideLabel ?? estadoStyle.label)
   const messages = [...consulta.mensajes].sort((left, right) => (
     new Date(left.fechaCreacion).getTime() - new Date(right.fechaCreacion).getTime()
   ))
   const metadata = [
-    ['Estado', resolvedByBot ? 'Resuelta por el bot' : estadoStyle.label],
+    ['Estado', effectiveEstadoLabel],
     ['Canal', consulta.canal === 'whatsapp' ? 'WhatsApp' : 'Web'],
     ['Tipo', consulta.tipoConsulta ?? 'General'],
     ['Prioridad', consulta.prioridad ?? 'Normal'],
@@ -168,8 +173,8 @@ export function ConsultaDetail({ consulta, onUpdateStatus, onBack, isUpdating = 
                   display: 'inline-flex',
                   padding: '3px 7px',
                   borderRadius: 'var(--radius-full)',
-                  background: resolvedByBot ? 'var(--status-bot-bg)' : estadoStyle.background,
-                  color: resolvedByBot ? 'var(--status-bot-text)' : estadoStyle.color,
+                  background: resolvedByBot ? 'var(--status-bot-bg)' : effectiveStyle.background,
+                  color: resolvedByBot ? 'var(--status-bot-text)' : effectiveStyle.color,
                   fontSize: '10px',
                   fontWeight: 700,
                 }}>

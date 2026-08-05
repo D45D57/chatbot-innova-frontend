@@ -11,8 +11,9 @@ interface ConsultaCardProps {
 }
 
 const ESTADO_STYLES: Record<ConsultaEstado, { label: string; color: string; background: string }> = {
+  iniciada: { label: 'Iniciada', color: 'var(--status-new-text)', background: 'var(--status-new-bg)' },
   nueva: { label: 'Nueva', color: 'var(--status-new-text)', background: 'var(--status-new-bg)' },
-  en_proceso: { label: 'En proceso', color: 'var(--status-progress-text)', background: 'var(--status-progress-bg)' },
+  en_proceso: { label: 'En seguimiento', color: 'var(--status-progress-text)', background: 'var(--status-progress-bg)' },
   resuelta: { label: 'Resuelta', color: 'var(--status-closed-text)', background: 'var(--status-closed-bg)' },
   cerrada: { label: 'Cerrada', color: 'var(--status-closed-text)', background: 'var(--status-closed-bg)' },
 }
@@ -37,6 +38,9 @@ export function ConsultaCard({ consulta, selected = false, onSelect, resolution 
   const estadoStyle = ESTADO_STYLES[consulta.estado]
   const derivadaText = getDerivadaText(consulta)
   const resolvedByBot = resolution?.resolvedByBot === true
+  const overrideLabel = resolution?.overrideLabel
+  const effectiveStyle = overrideLabel ? ESTADO_STYLES['en_proceso'] : estadoStyle
+  const badgeLabel = resolvedByBot ? 'Resuelta por el bot' : (overrideLabel ?? estadoStyle.label)
 
   return (
     <button
@@ -54,11 +58,11 @@ export function ConsultaCard({ consulta, selected = false, onSelect, resolution 
           <h3>{consulta.clienteNombre || 'Cliente sin identificar'}</h3>
           <span
             className={`consulta-card__status${resolvedByBot ? ' consulta-card__status--bot' : ''}`}
-            style={resolvedByBot ? undefined : { background: estadoStyle.background, color: estadoStyle.color }}
+            style={resolvedByBot ? undefined : { background: effectiveStyle.background, color: effectiveStyle.color }}
             title={resolvedByBot ? 'Estado visual estimado a partir de las señales disponibles' : undefined}
           >
             {resolvedByBot && <AppIcon name="automation" size={13} />}
-            {resolvedByBot ? 'Resuelta por el bot' : estadoStyle.label}
+            {badgeLabel}
           </span>
         </div>
         <p className="consulta-card__message">{getLastMessage(consulta)}</p>

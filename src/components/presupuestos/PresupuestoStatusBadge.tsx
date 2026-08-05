@@ -1,9 +1,9 @@
 import type { PresupuestoEstado } from '../../types/presupuesto'
 
 const STATUS_LABELS: Record<PresupuestoEstado, string> = {
-  PENDIENTE: 'Pendiente',
-  EN_PROCESO: 'En proceso',
-  ENVIADO: 'Enviado',
+  PENDIENTE: 'Requiere cotización',
+  EN_PROCESO: 'Requiere cotización',
+  ENVIADO: 'En seguimiento',
   CONCRETADO: 'Concretado',
   RECHAZADO: 'Rechazado',
 }

@@ -63,16 +63,16 @@ export function DashboardPage() {
 
   const metrics = [
     {
-      label: 'Consultas pendientes',
+      label: 'Consultas recibidas',
       value: stats.consultasPendientes.value,
-      description: 'Requieren seguimiento',
+      description: 'Nuevas y en seguimiento',
       color: brand.primary,
       icon: <IconWrapper><AppIcon name="chat" size={22} /></IconWrapper>,
       tone: 'primary' as const,
       loading: isBusinessLoading || (!businessUnavailable && stats.consultasPendientes.status === 'loading'),
       error: !businessUnavailable && stats.consultasPendientes.status === 'error',
       unavailable: businessUnavailable,
-      onClick: () => navigate('/consultas?atencion=humana&estado=en_proceso'),
+      onClick: () => navigate('/consultas?estado=activas'),
     },
     {
       label: 'Presupuestos registrados',
@@ -109,7 +109,7 @@ export function DashboardPage() {
       loading: isBusinessLoading || (!businessUnavailable && stats.consultasResueltas.status === 'loading'),
       error: !businessUnavailable && stats.consultasResueltas.status === 'error',
       unavailable: businessUnavailable,
-      onClick: () => navigate('/consultas?resolucion=bot'),
+      onClick: () => navigate('/consultas?estado=resuelta_bot'),
     },
   ]
 

@@ -8,6 +8,7 @@ import { Drawer } from '../components/layout/Drawer'
 import { PageBackButton } from '../components/navigation/PageBackButton'
 import { Avatar } from '../components/ui/Avatar'
 import { AppIcon } from '../components/ui/AppIcon'
+import { AuthLayout } from '../components/auth/AuthLayout'
 import { apiRequest } from '../services/apiClient'
 import { brand } from '../styles/brand'
 import { Switch } from '../components/ui/Switch'
@@ -119,8 +120,10 @@ export function BusinessConfigPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { isDark, setTheme } = useTheme()
 
-  const [businessExists, setBusinessExists] = useState<boolean | null>(business ? true : null)
-  const isEdit = !!business || businessExists === true
+  const [businessExists, setBusinessExists] = useState<boolean | null>(
+    business ? Boolean(business.nombre) : null
+  )
+  const isEdit = businessExists === true
 
   const [form, setForm] = useState<FormData>(
     business
@@ -160,7 +163,7 @@ export function BusinessConfigPage() {
 
     let active = true
     void loadBusiness(user.id).then(loadedBusiness => {
-      if (active) setBusinessExists(loadedBusiness !== null)
+      if (active) setBusinessExists(Boolean(loadedBusiness?.nombre))
     })
 
     return () => {
@@ -442,6 +445,109 @@ export function BusinessConfigPage() {
     )
   }
 
+  // ── SETUP MODE (primer ingreso: sin nombre de negocio) ─────────────────────
+  if (!isEdit) {
+    return (
+      <AuthLayout
+        title="Configura tu negocio"
+        subtitle="Solo una vez. Luego podrás editar estos datos y personalizar tu negocio desde Configuración."
+        onBack={() => navigate(-1)}
+        illustrationSrc="/bot-negocio.png"
+        illustrationAlt="Asistente virtual de EmprendeBot"
+        compact
+      >
+        {showSuccessModal && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 200,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <div style={{
+              width: '88%', maxWidth: 360,
+              background: 'var(--color-bg)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '32px 24px 28px',
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              gap: '12px', textAlign: 'center',
+            }}>
+              <img src="/negocioCreado.jpeg" alt="Negocio creado" style={{ width: '80%', maxWidth: 200 }} />
+              <h2 style={{ fontSize: '20px', fontWeight: 700, lineHeight: 1.3, margin: 0 }}>¡Todo listo!</h2>
+              <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: 1.5, margin: 0 }}>
+                Tu negocio y tu asistente virtual fueron configurados correctamente.
+              </p>
+              <button
+                onClick={() => navigate('/dashboard', { replace: true })}
+                style={{
+                  marginTop: '8px', width: '100%', height: 52,
+                  background: brand.primaryGradient,
+                  color: '#fff', border: 'none',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '14px', fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'var(--font-family)',
+                }}
+              >
+                IR AL PANEL →
+              </button>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={labelStyle}>Nombre del negocio *</label>
+            <Input placeholder="Ej: Bella Luna" value={form.nombre} onChange={set('nombre')} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={labelStyle}>Rubro del negocio</label>
+            <select
+              value={form.rubroId}
+              onChange={e => setForm(prev => ({ ...prev, rubroId: e.target.value }))}
+              style={{ ...selectStyle, color: form.rubroId ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}
+            >
+              <option value="">Selecciona</option>
+              {rubros.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={labelStyle}>Descripción breve</label>
+            <textarea
+              value={form.descripcion}
+              onChange={set('descripcion')}
+              placeholder="Ej: Peluquería unisex especializada en cortes modernos, coloración y tratamientos capilares."
+              rows={3}
+              style={textareaStyle}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={labelStyle}>Horario de atención</label>
+            <Input placeholder="Ej: Lun a Sáb de 9:00 a 20:00 hs" value={form.horario} onChange={set('horario')} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={labelStyle}>Teléfono</label>
+            <Input type="tel" placeholder="Ej: +54 9 11 5555-1234" value={form.telefono} onChange={set('telefono')} />
+          </div>
+
+          {error && <p style={{ fontSize: '13px', color: 'var(--color-error)', margin: 0 }}>{error}</p>}
+
+          <Button
+            type="submit"
+            fullWidth
+            size="lg"
+            loading={loading}
+            style={{ background: brand.primaryGradient, borderRadius: 'var(--radius-md)', border: 'none', marginTop: '4px' }}
+          >
+            Crear negocio
+          </Button>
+        </form>
+      </AuthLayout>
+    )
+  }
+
+  // ── EDIT MODE ───────────────────────────────────────────────────────────────
   return (
     <div className={`business-config-page${isEdit ? ' business-config-page--editing' : ''}`} style={{
       flex: 1,

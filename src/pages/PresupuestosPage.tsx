@@ -29,10 +29,10 @@ type PresupuestoVisibleFilter =
 
 const FILTER_OPTIONS: Array<{ value: PresupuestoVisibleFilter; label: string }> = [
   { value: 'todos', label: 'Todos' },
-  { value: 'cotizacion', label: 'Requieren cotización' },
+  { value: 'cotizacion', label: 'Requiere cotización' },
   { value: 'seguimiento', label: 'En seguimiento' },
-  { value: 'concretado', label: 'Concretados' },
-  { value: 'rechazado', label: 'Rechazados' },
+  { value: 'concretado', label: 'Concretado' },
+  { value: 'rechazado', label: 'Rechazado' },
 ]
 
 const normalizeVisibleFilter = (value: string | null): PresupuestoVisibleFilter => {
