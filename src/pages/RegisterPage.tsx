@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button'
 import { AuthLayout, PasswordVisibilityButton } from '../components/auth/AuthLayout'
 import { GoogleAuthButton } from '../components/auth/GoogleAuthButton'
 import { brand } from '../styles/brand'
+import { getUserFacingErrorMessage } from '../services/apiClient'
 
 export function RegisterPage() {
   const navigate = useNavigate()
@@ -52,7 +53,7 @@ export function RegisterPage() {
       await register(nombre, email, password, '')
       setShowSuccessModal(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al crear la cuenta')
+      setError(getUserFacingErrorMessage(err, { context: 'register', fallback: 'No pudimos crear la cuenta. Intentá nuevamente.' }))
     } finally {
       setLoading(false)
     }
@@ -71,7 +72,7 @@ export function RegisterPage() {
       const business = await loadBusiness(user.id)
       navigate(business ? '/dashboard' : '/configurar', { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No pudimos continuar con Google.')
+      setError(getUserFacingErrorMessage(err, { context: 'google' }))
     } finally {
       setGoogleLoading(false)
     }

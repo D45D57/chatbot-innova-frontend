@@ -2,6 +2,9 @@ import { apiRequest } from './apiClient'
 import { mapFaqApiToUi } from './faqMappers'
 import { mapProductApi } from './productApi'
 import type { Business, FAQ, FAQApi, Product, ProductApi, Rubro } from '../types'
+import { clearTemporaryConversationState } from './chatStorage'
+import { reconcileReturnedSession } from './publicChatSessionStorage'
+import { createPublicChatLifecycleFields } from './publicChatLifecycle'
 
 interface PublicFaqsResponse {
   success: boolean
@@ -45,6 +48,7 @@ interface PublicChatInitResponse {
   data: {
     sessionId?: string
     hasHistory?: boolean
+    lifecycleEvent?: 'SESSION_EXPIRED_INACTIVITY' | null
     consultationId?: string | null
     botData?: PublicBotData
     botId?: string
@@ -75,10 +79,12 @@ export async function getPublicBusinessApi(slug: string): Promise<Business> {
     { auth: false },
   )
   const data = response.data
+  const sessionChanged = reconcileReturnedSession(slug, storedSessionId, data.sessionId)
   if (data.sessionId) localStorage.setItem(sessionStorageKey, data.sessionId)
   const bot = data.botData
   const botId = bot?.botId ?? data.botId
   if (!botId) throw new Error('La respuesta pública del chatbot no contiene un identificador.')
+  if (sessionChanged) clearTemporaryConversationState(botId)
 
   return {
     id: botId,
@@ -111,6 +117,7 @@ export async function getPublicBusinessApi(slug: string): Promise<Business> {
     chatSessionId: data.sessionId,
     chatConsultationId: data.consultationId ?? undefined,
     chatHasHistory: data.hasHistory ?? false,
+    ...createPublicChatLifecycleFields(data.lifecycleEvent, sessionChanged),
   }
 }
 

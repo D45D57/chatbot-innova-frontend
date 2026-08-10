@@ -8,6 +8,7 @@ import { AuthLayout, PasswordVisibilityButton } from '../components/auth/AuthLay
 import { Input } from '../components/ui/Input'
 import { Button } from '../components/ui/Button'
 import { brand } from '../styles/brand'
+import { getUserFacingErrorMessage } from '../services/apiClient'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -44,7 +45,7 @@ export function LoginPage() {
         await continueAfterLogin(user.id)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al iniciar sesión')
+      setError(getUserFacingErrorMessage(err, { context: 'login', fallback: 'No pudimos iniciar sesión. Intentá nuevamente.' }))
     } finally {
       setLoading(false)
     }
@@ -62,7 +63,7 @@ export function LoginPage() {
       const user = await loginWithGoogle(response.credential)
       await continueAfterLogin(user.id)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No pudimos continuar con Google.')
+      setError(getUserFacingErrorMessage(err, { context: 'google' }))
     } finally {
       setGoogleLoading(false)
     }

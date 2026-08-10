@@ -1,12 +1,14 @@
+import { useState } from 'react'
 import type { Consulta, ConsultaEstado, Mensaje } from '../../types'
 import { formatRelativeTime } from '../../utils/formatRelativeTime'
 import { AppIcon } from '../ui/AppIcon'
 import { Button } from '../ui/Button'
+import { ConfirmationDialog } from '../ui/ConfirmationDialog'
 import type { ConsultationResolution } from '../../utils/consultationResolution'
 
 interface ConsultaDetailProps {
   consulta: Consulta | null
-  onUpdateStatus: (consultaId: string, estado: ConsultaEstado) => Promise<void>
+  onUpdateStatus: (consultaId: string, estado: ConsultaEstado) => Promise<boolean>
   onBack?: () => void
   isUpdating?: boolean
   updateError?: string
@@ -59,11 +61,13 @@ function openWhatsApp(phone: string) {
 }
 
 export function ConsultaDetail({ consulta, onUpdateStatus, onBack, isUpdating = false, updateError = '', resolution }: ConsultaDetailProps) {
+  const [pendingStatus, setPendingStatus] = useState<ConsultaEstado | null>(null)
   if (!consulta) return null
 
   const estadoStyle = ESTADO_STYLES[consulta.estado]
   const statusAction = getStatusAction(consulta.estado)
   const isClosed = consulta.estado === 'cerrada'
+
   const resolvedByBot = resolution?.resolvedByBot === true
   const overrideLabel = resolution?.overrideLabel
   const effectiveStyle = overrideLabel ? ESTADO_STYLES['en_proceso'] : estadoStyle
@@ -225,7 +229,9 @@ export function ConsultaDetail({ consulta, onUpdateStatus, onBack, isUpdating = 
             type="button"
             size="md"
             disabled={isUpdating}
-            onClick={() => onUpdateStatus(consulta.id, statusAction.nextEstado)}
+            onClick={() => statusAction.nextEstado === 'cerrada'
+              ? setPendingStatus(statusAction.nextEstado)
+              : void onUpdateStatus(consulta.id, statusAction.nextEstado)}
             style={{
               height: 37,
               padding: '0 14px',
@@ -308,6 +314,19 @@ export function ConsultaDetail({ consulta, onUpdateStatus, onBack, isUpdating = 
           )
         })}
       </div>
+      <ConfirmationDialog
+        open={pendingStatus === 'cerrada'}
+        title="¿Cerrar consulta?"
+        confirmLabel="Cerrar"
+        cancelLabel="Cancelar"
+        loading={isUpdating}
+        error={updateError}
+        onOpenChange={open => { if (!open) setPendingStatus(null) }}
+        onConfirm={async () => {
+          const nextStatus = pendingStatus
+          if (nextStatus && await onUpdateStatus(consulta.id, nextStatus)) setPendingStatus(null)
+        }}
+      />
     </section>
   )
 }

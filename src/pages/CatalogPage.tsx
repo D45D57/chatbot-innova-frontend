@@ -5,11 +5,13 @@ import { useBusiness } from '../context/BusinessContext'
 import { Drawer } from '../components/layout/Drawer'
 import { Avatar } from '../components/ui/Avatar'
 import { AppIcon } from '../components/ui/AppIcon'
+import { ConfirmationDialog } from '../components/ui/ConfirmationDialog'
 import { PageBackButton } from '../components/navigation/PageBackButton'
 import type { ProductApi } from '../types'
 import { deleteProductApi, getProductsApi } from '../services/productApi'
 import { openChatPreview } from '../utils/chatRoutes'
 import { filterCatalogProducts, normalizeSearchText } from '../utils/catalogSearch'
+import { getUserFacingErrorMessage } from '../services/apiClient'
 import '../styles/catalog.css'
 
 const PAGE_SIZE = 10
@@ -78,7 +80,7 @@ export function CatalogPage() {
       setProducts(result.productos)
       setTotalPages(Math.max(result.totalPaginas, 1))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No pudimos cargar el catálogo.')
+      setError(getUserFacingErrorMessage(caught, { fallback: 'No pudimos cargar el catálogo. Intentá nuevamente.' }))
     } finally {
       setIsLoading(false)
     }
@@ -113,7 +115,7 @@ export function CatalogPage() {
       setDeleteTarget(null)
       await loadProducts()
     } catch (caught) {
-      setDeleteError(caught instanceof Error ? caught.message : 'No pudimos eliminar el producto.')
+      setDeleteError(getUserFacingErrorMessage(caught, { fallback: 'No pudimos eliminar el producto. Intentá nuevamente.' }))
     } finally {
       setIsDeleting(false)
     }
@@ -218,9 +220,6 @@ export function CatalogPage() {
                         ? <img src={product.urlImagen} alt={product.nombre} />
                         : <AppIcon name="catalog" size={48} />
                       }
-                      <span className={`product-card__status${product.activo ? '' : ' product-card__status--inactive'}`}>
-                        {product.activo ? 'Activo' : 'Inactivo'}
-                      </span>
                     </div>
                     <div className="product-card__body">
                       <div className="product-card__title-row">
@@ -302,20 +301,18 @@ export function CatalogPage() {
         </div>
       )}
 
-      {deleteTarget && (
-        <div className="catalog-modal-backdrop">
-          <section className="catalog-modal catalog-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title">
-            <span className="catalog-delete-modal__icon"><AppIcon name="trash" size={28} /></span>
-            <h2 id="delete-title">Eliminar producto</h2>
-            <p>¿Seguro que querés eliminar <strong>{deleteTarget.nombre}</strong>? Esta acción no se puede deshacer.</p>
-            {deleteError && <div className="catalog-alert catalog-alert--error" role="alert">{deleteError}</div>}
-            <div className="catalog-modal__actions">
-              <button type="button" className="catalog-secondary-button" disabled={isDeleting} onClick={() => setDeleteTarget(null)}>Cancelar</button>
-              <button type="button" className="catalog-danger-button" disabled={isDeleting} onClick={() => void handleDelete()}>{isDeleting ? 'Eliminando…' : 'Eliminar'}</button>
-            </div>
-          </section>
-        </div>
-      )}
+      <ConfirmationDialog
+        open={Boolean(deleteTarget)}
+        title="¿Eliminar producto?"
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        loading={isDeleting}
+        error={deleteError}
+        onOpenChange={open => {
+          if (!open) { setDeleteTarget(null); setDeleteError('') }
+        }}
+        onConfirm={() => void handleDelete()}
+      />
     </div>
   )
 }

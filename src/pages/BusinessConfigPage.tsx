@@ -8,8 +8,9 @@ import { Drawer } from '../components/layout/Drawer'
 import { PageBackButton } from '../components/navigation/PageBackButton'
 import { Avatar } from '../components/ui/Avatar'
 import { AppIcon } from '../components/ui/AppIcon'
+import { ConfirmationDialog } from '../components/ui/ConfirmationDialog'
 import { AuthLayout } from '../components/auth/AuthLayout'
-import { apiRequest } from '../services/apiClient'
+import { apiRequest, getUserFacingErrorMessage, UserFacingError } from '../services/apiClient'
 import { brand } from '../styles/brand'
 import { Switch } from '../components/ui/Switch'
 import { useTheme } from '../hooks/useTheme'
@@ -153,6 +154,9 @@ export function BusinessConfigPage() {
   const [slugPersonalizado, setSlugPersonalizado] = useState<boolean | null>(null)
   const [slugOriginal, setSlugOriginal] = useState(business?.slug ?? '')
   const [persistedLogo, setPersistedLogo] = useState(business?.logo ?? '')
+  const [showSlugConfirmation, setShowSlugConfirmation] = useState(false)
+  const pendingSubmitFormRef = useRef<HTMLFormElement | null>(null)
+  const slugConfirmationAcceptedRef = useRef(false)
 
   const publicUrl = form.slug ? getPublicChatUrl(form.slug, window.location.origin) : ''
 
@@ -176,7 +180,7 @@ export function BusinessConfigPage() {
     apiRequest<RubrosResponse>('/bot/rubros', { auth: false }).then(data => {
       setRubros(data.rubros)
     }).catch(err => {
-      setError(err instanceof Error ? err.message : 'No se pudieron cargar los rubros.')
+      setError(getUserFacingErrorMessage(err, { fallback: 'No pudimos cargar los rubros. Intentá nuevamente.' }))
     })
   }, [])
 
@@ -202,7 +206,7 @@ export function BusinessConfigPage() {
       setSlugPersonalizado(data.configuracion.slugPersonalizado)
       setPersistedLogo(data.configuracion.logoUrl ?? '')
     }).catch(err => {
-      setError(err instanceof Error ? err.message : 'No se pudo cargar la configuración.')
+      setError(getUserFacingErrorMessage(err, { fallback: 'No pudimos cargar la configuración. Intentá nuevamente.' }))
     })
   }, [user])
 
@@ -284,7 +288,7 @@ export function BusinessConfigPage() {
     })
   }
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError('')
 
@@ -328,11 +332,12 @@ export function BusinessConfigPage() {
       setError('El enlace público ya fue personalizado y no puede volver a modificarse.')
       return
     }
-    if (slugCambio && !window.confirm(
-      `¿Confirmás el enlace ${getPublicChatUrl(form.slug, window.location.origin)}? Solo podés personalizarlo una vez y después no podrá modificarse.`
-    )) {
+    if (slugCambio && !slugConfirmationAcceptedRef.current) {
+      pendingSubmitFormRef.current = e.currentTarget
+      setShowSlugConfirmation(true)
       return
     }
+    slugConfirmationAcceptedRef.current = false
 
     setLoading(true)
 
@@ -378,9 +383,8 @@ export function BusinessConfigPage() {
           })
         } catch (uploadError) {
           if (controller.signal.aborted) {
-            throw new Error('La carga de la imagen tardó demasiado. Intentá nuevamente.', {
-              cause: uploadError,
-            })
+            void uploadError
+            throw new UserFacingError('La carga de la imagen tardó demasiado. Intentá nuevamente.')
           }
           throw uploadError
         } finally {
@@ -392,7 +396,7 @@ export function BusinessConfigPage() {
       const confirmedConfig = confirmedResponse.configuracion
       const syncedBusiness = await loadBusiness(user.id)
       if (!syncedBusiness) {
-        throw new Error('La configuración se guardó, pero no pudo volver a cargarse desde el servidor.')
+        throw new UserFacingError('Guardamos los cambios, pero no pudimos actualizar la información en pantalla. Volvé a intentarlo.')
       }
       const confirmedPrimary = confirmedConfig.colorPrimario ?? DEFAULT_CHAT_APPEARANCE.primary
       const confirmedSecondary = confirmedConfig.colorSecundario ?? DEFAULT_CHAT_APPEARANCE.secondary
@@ -415,9 +419,11 @@ export function BusinessConfigPage() {
       setSelectedLogo(null)
       setLogoValidationError('')
       if (fileInputRef.current) fileInputRef.current.value = ''
+      setShowSlugConfirmation(false)
+      pendingSubmitFormRef.current = null
       setShowSuccessModal(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar en el servidor.')
+      setError(getUserFacingErrorMessage(err, { fallback: 'No pudimos guardar la configuración. Intentá nuevamente.' }))
     } finally {
       setLoading(false)
     }
@@ -537,7 +543,7 @@ export function BusinessConfigPage() {
             type="submit"
             fullWidth
             size="lg"
-            loading={loading}
+        loading={loading}
             style={{ background: brand.primaryGradient, borderRadius: 'var(--radius-md)', border: 'none', marginTop: '4px' }}
           >
             Crear negocio
@@ -612,6 +618,23 @@ export function BusinessConfigPage() {
           </div>
         </div>
       )}
+
+      <ConfirmationDialog
+        open={showSlugConfirmation}
+        title="¿Confirmar enlace público?"
+        description="Este enlace no podrá volver a modificarse."
+        confirmLabel="Confirmar"
+        cancelLabel="Cancelar"
+        loading={loading}
+        onOpenChange={open => {
+          setShowSlugConfirmation(open)
+          if (!open) pendingSubmitFormRef.current = null
+        }}
+        onConfirm={() => {
+          slugConfirmationAcceptedRef.current = true
+          pendingSubmitFormRef.current?.requestSubmit()
+        }}
+      />
 
       {/* Header — distinto según modo */}
       {isEdit ? (

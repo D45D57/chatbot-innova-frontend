@@ -155,3 +155,12 @@ export function clearChatState(businessId: string): void {
     // El reinicio visual no depende de que localStorage este disponible.
   }
 }
+
+export function clearTemporaryConversationState(businessId: string): void {
+  clearChatState(businessId)
+  try {
+    sessionStorage.removeItem(`eb_pending_quote:${businessId}`)
+  } catch {
+    // El estado en memoria sigue siendo la fuente activa de la conversación.
+  }
+}

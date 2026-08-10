@@ -13,7 +13,7 @@ const compiled = ts.transpileModule(source, {
 const module = { exports: {} }
 new Function('exports', 'module', compiled)(module.exports, module)
 
-const { getEffectivePresupuestoTotal } = module.exports
+const { getEffectivePresupuestoTotal, isPresupuestoReadyToSend } = module.exports
 
 test('prioriza un total positivo persistido por backend', () => {
   assert.equal(getEffectivePresupuestoTotal({
@@ -53,4 +53,32 @@ test('listado y detalle utilizan la misma funcion centralizada', () => {
 
   assert.match(listPage, /formatCurrency\(getEffectivePresupuestoTotal\(presupuesto\)\)/)
   assert.match(detailPage, /formatCurrency\(getEffectivePresupuestoTotal\(presupuesto\)\)/)
+})
+
+test('solo permite enviar presupuestos con todos los importes completos', () => {
+  assert.equal(isPresupuestoReadyToSend({
+    total: 0,
+    items: [{ cantidad: 1, precioUnitario: 0, subtotal: 0 }],
+  }), false)
+  assert.equal(isPresupuestoReadyToSend({
+    total: 100,
+    items: [
+      { cantidad: 1, precioUnitario: 100, subtotal: 100 },
+      { cantidad: 1, precioUnitario: 0, subtotal: 0 },
+    ],
+  }), false)
+  assert.equal(isPresupuestoReadyToSend({
+    total: 0,
+    items: [
+      { cantidad: 2, precioUnitario: 100, subtotal: 200 },
+      { cantidad: 1, precioUnitario: 50, subtotal: 50 },
+    ],
+  }), true)
+})
+
+test('el detalle mantiene visible y deshabilita Marcar enviado si falta cotizar', () => {
+  const detailPage = readSource('src/pages/PresupuestoDetailPage.tsx')
+
+  assert.match(detailPage, /estado === 'ENVIADO' && !canMarkAsSent/)
+  assert.match(detailPage, /Completá el precio de todos los productos/)
 })

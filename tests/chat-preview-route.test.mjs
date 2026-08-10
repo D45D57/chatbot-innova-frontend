@@ -7,6 +7,7 @@ const readSource = relativePath =>
 
 const app = readSource('src/App.tsx')
 const chatbotPage = readSource('src/pages/ChatbotPage.tsx')
+const useChat = readSource('src/hooks/useChat.ts')
 const chatRoutes = readSource('src/utils/chatRoutes.ts')
 const businessConfig = readSource('src/pages/BusinessConfigPage.tsx')
 const floatingWindow = readSource('src/components/chat/FloatingChatWindow.tsx')
@@ -47,13 +48,61 @@ test('el enlace copiado continúa usando exclusivamente la ruta pública', () =>
 
 test('la presentación pública usa ayudar.png y no se reutiliza en preview', () => {
   assert.match(publicBackground, /src="\/ayudar\.png"/)
-  assert.match(chatbotPage, /<PublicChatBackground>{chat}<\/PublicChatBackground>/)
+  assert.match(chatbotPage, /<PublicChatBackground variant={publicBackgroundVariant}>{chat}<\/PublicChatBackground>/)
   assert.match(chatbotPage, /<div className="chat-preview-overlay">{chat}<\/div>/)
   assert.doesNotMatch(floatingWindow, /ayudar\.png/)
 })
 
+test('la ruta publica fuerza el fondo claro sin depender del tema', () => {
+  assert.match(chatbotPage, /const publicBackgroundVariant = 'light'/)
+  assert.match(
+    chatbotPage,
+    /const renderRouteExperience = \(content: ReactNode\) => preview\s*\? content\s*:\s*<div className="public-chat-theme--light">{content}<\/div>/,
+  )
+  assert.match(publicBackground, /public-chat-background--\$\{variant\}/)
+  assert.match(styles, /\.public-chat-background--light\s*{/)
+  assert.match(styles, /\.public-chat-background--dark\s*{/)
+  assert.match(styles, /\.public-chat-theme--light\s*{[\s\S]*color-scheme: light;/)
+  assert.doesNotMatch(publicBackground, /ThemeContext|localStorage|prefers-color-scheme|data-theme/)
+  assert.doesNotMatch(chatbotPage, /ThemeContext|useTheme|setTheme|localStorage|prefers-color-scheme|data-theme/)
+})
+
+test('la frontera clara cubre carga, errores y chat publico pero no el preview', () => {
+  assert.match(chatbotPage, /if \(isBusinessLoading && !business\)\s*{\s*return renderRouteExperience\(/)
+  assert.match(chatbotPage, /if \(!business && \(!isBrowserOnline \|\| hasNetworkError\)\)\s*{\s*return renderRouteExperience\(/)
+  assert.match(chatbotPage, /if \(!business\)\s*{\s*return renderRouteExperience\(/)
+  assert.match(
+    chatbotPage,
+    /return preview\s*\? <div className="chat-preview-overlay">{chat}<\/div>\s*:\s*renderRouteExperience\(<PublicChatBackground/,
+  )
+})
+
+test('la frontera publica fija tokens neutrales y conserva los colores del negocio', () => {
+  const lightThemeBlock = styles.match(/\.public-chat-theme--light\s*{([\s\S]*?)\n}/)?.[1] ?? ''
+  for (const token of [
+    '--color-text-primary',
+    '--color-text-secondary',
+    '--color-border',
+    '--color-bg',
+    '--color-bg-subtle',
+    '--color-bg-answer',
+    '--color-surface-muted',
+    '--color-field',
+    '--shadow-sm',
+    '--shadow-md',
+    '--shadow-lg',
+  ]) {
+    assert.match(lightThemeBlock, new RegExp(`${token}:`))
+  }
+  assert.doesNotMatch(lightThemeBlock, /--chat-primary|--chat-secondary|--chat-gradient/)
+  assert.match(chatbotPage, /'--chat-primary': appearance\.primary/)
+  assert.match(chatbotPage, /'--chat-secondary': appearance\.secondary/)
+  assert.match(chatbotPage, /'--chat-gradient': `linear-gradient\(90deg, \$\{appearance\.primary}, \$\{appearance\.secondary}\)`/)
+  assert.match(chatbotPage, /'--color-bg-answer': appearance\.primary/)
+})
+
 test('los controles técnicos se habilitan solamente en preview', () => {
-  assert.match(chatbotPage, /onRefresh={preview \? reset : undefined}/)
+  assert.match(chatbotPage, /onRefresh={preview \? \(\) => setPendingConfirmation\([\s\S]*action: reset/)
   assert.match(chatbotPage, /onClose={preview \? closePreview : undefined}/)
   assert.match(chatHeader, /{onClose && \(/)
   assert.match(chatHeader, /aria-label="Cerrar vista previa"/)
@@ -64,6 +113,9 @@ test('el preview inicia con la configuracion actual y no restaura un saludo ante
     chatbotPage,
     /if \(!preview \|\| previewInitializedRef\.current\) return[\s\S]*previewInitializedRef\.current = true[\s\S]*reset\(\)/,
   )
+  assert.match(useChat, /const restorationVersion = conversationVersionRef\.current/)
+  assert.match(useChat, /restorationVersion !== conversationVersionRef\.current/)
+  assert.match(useChat, /const reset = useCallback[\s\S]*conversationVersionRef\.current \+= 1/)
 })
 
 test('la ventana usa Pointer Events y limita su posición al viewport', () => {

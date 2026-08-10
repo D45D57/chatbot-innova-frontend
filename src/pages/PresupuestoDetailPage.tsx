@@ -4,6 +4,7 @@ import { Drawer } from '../components/layout/Drawer'
 import { PresupuestoStatusBadge } from '../components/presupuestos/PresupuestoStatusBadge'
 import { AppIcon } from '../components/ui/AppIcon'
 import { Avatar } from '../components/ui/Avatar'
+import { ConfirmationDialog } from '../components/ui/ConfirmationDialog'
 import { useAuth } from '../context/AuthContext'
 import { useBusiness } from '../context/BusinessContext'
 import { ApiError } from '../services/apiClient'
@@ -18,7 +19,7 @@ import type {
   PresupuestoEstado,
   PresupuestoItemInput,
 } from '../types/presupuesto'
-import { getEffectivePresupuestoTotal } from '../utils/presupuestoTotal'
+import { getEffectivePresupuestoTotal, isPresupuestoReadyToSend } from '../utils/presupuestoTotal'
 import '../styles/presupuestos.css'
 
 const TRANSITIONS: Record<PresupuestoEstado, PresupuestoEstado[]> = {
@@ -75,6 +76,8 @@ export function PresupuestoDetailPage() {
   const [notFound, setNotFound] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [pendingStatus, setPendingStatus] = useState<PresupuestoEstado | null>(null)
+  const [showCancelQuoteConfirmation, setShowCancelQuoteConfirmation] = useState(false)
 
   useEffect(() => {
     if (user) void loadBusiness(user.id)
@@ -146,8 +149,7 @@ export function PresupuestoDetailPage() {
   }
 
   const handleStatus = async (estado: PresupuestoEstado) => {
-    if (!presupuesto || isSaving) return
-    if (estado === 'RECHAZADO' && !window.confirm('¿Confirmás que querés rechazar este presupuesto?')) return
+    if (!presupuesto || isSaving) return false
     setIsSaving(true)
     setError(null)
     setSuccess(null)
@@ -155,8 +157,10 @@ export function PresupuestoDetailPage() {
       const response = await updatePresupuestoEstado(presupuesto.id, { estado })
       setPresupuesto(response.presupuesto)
       setSuccess('Estado actualizado correctamente.')
+      return true
     } catch (saveError) {
       setError(readableError(saveError))
+      return false
     } finally {
       setIsSaving(false)
     }
@@ -194,6 +198,7 @@ export function PresupuestoDetailPage() {
     ? ['PENDIENTE', 'EN_PROCESO', 'ENVIADO'].includes(presupuesto.estado)
     : false
   const items = presupuesto?.items ?? []
+  const canMarkAsSent = presupuesto ? isPresupuestoReadyToSend(presupuesto) : false
 
   return (
     <div className="budgets-page">
@@ -309,7 +314,15 @@ export function PresupuestoDetailPage() {
                   </div>
                   <div className="budget-actions__buttons">
                     {canQuote && (
-                      <button type="button" disabled={isSaving} className={showQuoteForm ? 'is-danger' : ''} onClick={() => setShowQuoteForm(value => !value)}>
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        className={showQuoteForm ? 'is-danger' : ''}
+                        onClick={() => {
+                          if (showQuoteForm && quoteItems.length > 0) setShowCancelQuoteConfirmation(true)
+                          else setShowQuoteForm(value => !value)
+                        }}
+                      >
                         {showQuoteForm ? 'Cancelar cotización' : presupuesto.linkPdf ? 'Volver a cotizar' : 'Cotizar'}
                       </button>
                     )}
@@ -317,13 +330,18 @@ export function PresupuestoDetailPage() {
                       <button
                         type="button"
                         key={estado}
-                        disabled={isSaving}
+                        disabled={isSaving || (estado === 'ENVIADO' && !canMarkAsSent)}
                         className={estado === 'RECHAZADO' ? 'is-danger' : ''}
-                        onClick={() => void handleStatus(estado)}
+                        onClick={() => estado === 'RECHAZADO' ? setPendingStatus(estado) : void handleStatus(estado)}
                       >
                         {ACTION_LABELS[estado]}
                       </button>
                     ))}
+                    {TRANSITIONS[presupuesto.estado].includes('ENVIADO') && !canMarkAsSent && (
+                      <p className="budget-actions__help">
+                        Completá el precio de todos los productos antes de marcar el presupuesto como enviado.
+                      </p>
+                    )}
                   </div>
                 </section>
               )}
@@ -332,7 +350,7 @@ export function PresupuestoDetailPage() {
                 <section className="budget-panel budget-quote-form">
                   <div>
                     <h2>Cotizar presupuesto</h2>
-                    <p>El total definitivo será calculado por el backend.</p>
+                    <p>El total se actualizará automáticamente con los importes ingresados.</p>
                   </div>
                   {quoteItems.map((item, index) => (
                     <div className="budget-quote-row" key={`${item.productoId ?? 'item'}-${index}`}>
@@ -359,6 +377,31 @@ export function PresupuestoDetailPage() {
                   </button>
                 </section>
               )}
+
+              <ConfirmationDialog
+                open={pendingStatus === 'RECHAZADO'}
+                title="¿Rechazar presupuesto?"
+                confirmLabel="Rechazar"
+                cancelLabel="Cancelar"
+                loading={isSaving}
+                error={pendingStatus === 'RECHAZADO' ? error ?? '' : ''}
+                onOpenChange={open => { if (!open) setPendingStatus(null) }}
+                onConfirm={async () => {
+                  const nextStatus = pendingStatus
+                  if (nextStatus && await handleStatus(nextStatus)) setPendingStatus(null)
+                }}
+              />
+              <ConfirmationDialog
+                open={showCancelQuoteConfirmation}
+                title="¿Cancelar cotización?"
+                confirmLabel="Cancelar"
+                cancelLabel="Volver"
+                onOpenChange={setShowCancelQuoteConfirmation}
+                onConfirm={() => {
+                  setShowCancelQuoteConfirmation(false)
+                  setShowQuoteForm(false)
+                }}
+              />
             </>
           ) : null}
         </main>

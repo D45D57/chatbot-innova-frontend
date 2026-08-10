@@ -32,7 +32,7 @@ interface UseConsultasResult {
   setSearchQuery: (query: string) => void
   selectConsulta: (consultaId: string) => void
   clearSelection: () => void
-  updateConsultaStatus: (consultaId: string, estado: ConsultaEstado) => Promise<void>
+  updateConsultaStatus: (consultaId: string, estado: ConsultaEstado) => Promise<boolean>
   reloadConsultas: () => Promise<void>
 }
 
@@ -179,18 +179,20 @@ export function useConsultas(userId?: string): UseConsultasResult {
   }, [])
 
   const updateConsultaStatus = useCallback(async (consultaId: string, estado: ConsultaEstado) => {
-    if (updatingConsultaId) return
+    if (updatingConsultaId) return false
     setUpdatingConsultaId(consultaId)
     setUpdateError('')
     try {
       const updated = await updateConsultaEstado(consultaId, estado, userId)
-      if (!updated) return
+      if (!updated) return false
       setAllConsultas(current => current.map(consulta => (
         consulta.id === consultaId ? updated : consulta
       )))
       setSelectedConsultaId(consultaId)
+      return true
     } catch {
       setUpdateError('No pudimos actualizar el estado. Intentá nuevamente.')
+      return false
     } finally {
       setUpdatingConsultaId(null)
     }

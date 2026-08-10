@@ -10,6 +10,7 @@ import {
 import { createFaqCategoryApi, getFaqCategoriesApi } from '../services/faqCategoryApi'
 import { mapFaqApiToUi, mapFaqCategoryApiToUi } from '../services/faqMappers'
 import { DUPLICATE_FAQ_MESSAGE, normalizeFaqQuestion } from '../utils/normalizeFaqQuestion'
+import { ApiError, UserFacingError, getUserFacingErrorMessage } from '../services/apiClient'
 
 export type FAQSortOption = 'created-desc' | 'created-asc' | 'alpha-asc' | 'alpha-desc'
 
@@ -18,8 +19,8 @@ interface UseFaqFilters {
   sort: FAQSortOption
 }
 
-const AUTH_INTEGRATION_MESSAGE = 'No se pudo conectar con el servidor. Volvé a iniciar sesión cuando la integración de autenticación esté disponible.'
-const BOT_CONFIG_MESSAGE = 'Primero debe configurarse el bot/negocio para poder administrar preguntas frecuentes.'
+const AUTH_MESSAGE = 'Tu sesión venció. Iniciá sesión nuevamente.'
+const BOT_CONFIG_MESSAGE = 'Primero completá la configuración de tu negocio para administrar preguntas frecuentes.'
 const CONNECTION_MESSAGE = 'No pudimos conectar con el servidor. Revisá tu conexión e intentá nuevamente.'
 
 function getTime(value: string): number {
@@ -44,40 +45,12 @@ function sortFaqs(left: FAQ, right: FAQ, sort: FAQSortOption): number {
 }
 
 function normalizeApiError(error: unknown): Error {
-  const message = error instanceof Error ? error.message : 'No pudimos conectar con el servidor.'
-  const normalized = message.toLowerCase()
-
-  if (normalized.includes('failed to fetch') || normalized.includes('networkerror')) {
-    return new Error(CONNECTION_MESSAGE)
+  if (error instanceof ApiError) {
+    if (error.status === 401 || error.status === 403) return new UserFacingError(AUTH_MESSAGE)
+    if (error.code === 'BOT_NOT_FOUND' || error.status === 404) return new UserFacingError(BOT_CONFIG_MESSAGE)
+    if (error.code === 'FAQ_DUPLICATE' || error.status === 409) return new UserFacingError(DUPLICATE_FAQ_MESSAGE)
   }
-
-  if (
-    normalized.includes('acceso denegado')
-    || normalized.includes('token')
-    || normalized.includes('credenciales')
-    || normalized.includes('401')
-    || normalized.includes('403')
-  ) {
-    return new Error(AUTH_INTEGRATION_MESSAGE)
-  }
-
-  if (
-    normalized.includes('configuración de bot no encontrada')
-    || normalized.includes('configuracion de bot no encontrada')
-    || normalized.includes('bot_not_found')
-  ) {
-    return new Error(BOT_CONFIG_MESSAGE)
-  }
-
-  if (
-    normalized.includes('faq_duplicate')
-    || normalized.includes('pregunta frecuente similar')
-    || normalized.includes('409')
-  ) {
-    return new Error(DUPLICATE_FAQ_MESSAGE)
-  }
-
-  return new Error(message)
+  return new UserFacingError(getUserFacingErrorMessage(error, { fallback: CONNECTION_MESSAGE }))
 }
 
 function normalizeFaqData(data: FAQFormData): FAQFormData {
@@ -86,10 +59,10 @@ function normalizeFaqData(data: FAQFormData): FAQFormData {
   const categoria = data.categoria?.trim() || undefined
   const nuevaCategoriaNombre = data.nuevaCategoriaNombre?.trim() || undefined
 
-  if (!pregunta) throw new Error('La pregunta es obligatoria.')
-  if (!respuesta) throw new Error('La respuesta es obligatoria.')
+  if (!pregunta) throw new UserFacingError('La pregunta es obligatoria.')
+  if (!respuesta) throw new UserFacingError('La respuesta es obligatoria.')
   if (!data.categoriaId && !nuevaCategoriaNombre) {
-    throw new Error('Seleccioná o creá una categoría para la FAQ.')
+    throw new UserFacingError('Seleccioná o creá una categoría para la FAQ.')
   }
 
   return {
@@ -152,7 +125,7 @@ export function useFaqs(filters: UseFaqFilters) {
     if (data.categoriaId) return { categoryId: data.categoriaId, categories }
 
     const nombre = data.nuevaCategoriaNombre?.trim() || data.categoria?.trim()
-    if (!nombre) throw new Error('Seleccioná o creá una categoría para la FAQ.')
+    if (!nombre) throw new UserFacingError('Seleccioná o creá una categoría para la FAQ.')
 
     const existingCategory = categories.find(category => category.nombre.toLowerCase() === nombre.toLowerCase())
     if (existingCategory) return { categoryId: existingCategory.id, categories }
@@ -171,7 +144,7 @@ export function useFaqs(filters: UseFaqFilters) {
     const normalizedData = normalizeFaqData(data)
     const normalizedQuestion = normalizeFaqQuestion(normalizedData.pregunta)
     if (allFaqs.some(faq => normalizeFaqQuestion(faq.pregunta) === normalizedQuestion)) {
-      throw new Error(DUPLICATE_FAQ_MESSAGE)
+      throw new UserFacingError(DUPLICATE_FAQ_MESSAGE)
     }
 
     try {
@@ -194,7 +167,7 @@ export function useFaqs(filters: UseFaqFilters) {
     const normalizedData = normalizeFaqData(data)
     const normalizedQuestion = normalizeFaqQuestion(normalizedData.pregunta)
     if (allFaqs.some(faq => faq.id !== faqId && normalizeFaqQuestion(faq.pregunta) === normalizedQuestion)) {
-      throw new Error(DUPLICATE_FAQ_MESSAGE)
+      throw new UserFacingError(DUPLICATE_FAQ_MESSAGE)
     }
 
     try {

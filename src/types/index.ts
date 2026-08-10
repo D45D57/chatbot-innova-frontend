@@ -170,6 +170,8 @@ export interface Business {
   chatSessionId?: string
   chatConsultationId?: string
   chatHasHistory?: boolean
+  chatSessionChanged?: boolean
+  chatLifecycleEvent?: 'SESSION_EXPIRED_INACTIVITY' | null
 }
 
 // ===== CHAT =====

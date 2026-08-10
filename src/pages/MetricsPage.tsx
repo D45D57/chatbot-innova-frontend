@@ -236,7 +236,7 @@ export function MetricsPage() {
                 <MetricCard label="Consultas iniciadas" value={data.totalConsultas} icon="chat" tone="teal" />
                 <MetricCard label="Presupuestos generados" value={data.totalPresupuestos} icon="budget" tone="purple" />
                 <MetricCard label="Ventas concretadas" value={data.totalConcretados} icon="check" tone="green" />
-                <MetricCard label="Tasa de conversión" value={`${data.conversionRate}%`} icon="metrics" tone="blue" />
+                <MetricCard label="Intención de compra" value={`${data.conversionRate}%`} icon="metrics" tone="blue" />
               </section>
 
               {!hasData ? (

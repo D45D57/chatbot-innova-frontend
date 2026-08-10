@@ -32,12 +32,36 @@ test('volver al menú después de FAQ ejecuta SHOW_MAIN_MENU sin reinterpretar e
 })
 
 test('las acciones de FAQ y catálogo están migradas', () => {
-  assert.match(useChat, /id: 'repeat-faq-menu'[\s\S]*action: 'SHOW_FAQ_MENU'/)
   assert.match(useChat, /SHOW_FAQ_MENU: \(\) => createFaqMenuResponse\(business\)/)
   assert.match(chatbotPage, /id: 'catalog-back-main-menu'[\s\S]*action: 'SHOW_MAIN_MENU'/)
   assert.match(chatbotPage, /onSelect={handleQuickReply}/)
   assert.match(chatbotPage, /action: 'SELECT_FAQ'/)
   assert.match(useChat, /SELECT_FAQ: \(\) => createSelectedFaqResponse\(option\.value, business\)/)
+})
+
+test('una sesión nueva conserva el historial pero retira controles incompatibles', () => {
+  assert.match(useChat, /function createNewSessionMessages[\s\S]*mergeSessionStartMessages\(history, initialMessages\)/)
+  assert.match(useChat, /business\.chatSessionChanged[\s\S]*createNewSessionMessages\(storedMessages, business\)/)
+  assert.match(useChat, /createNewSessionMessages\(previousMessages, business\)/)
+  assert.match(useChat, /setAwaitingInput\(null\)[\s\S]*setContactName\(''\)[\s\S]*setIsTyping\(false\)/)
+  assert.doesNotMatch(useChat, /chatSessionChanged[\s\S]{0,200}clearChatHistory/)
+})
+
+test('una sesión nueva agrega quick replies nuevas sin duplicar un saludo consecutivo', () => {
+  assert.match(useChat, /const initialMessages = createSessionStartMessages\(business\)/)
+  assert.match(useChat, /mergeSessionStartMessages\(history, initialMessages\)/)
+  assert.match(useChat, /createInitialMessage[\s\S]*quickReplies: QUICK_REPLIES_INICIAL/)
+})
+
+test('la restauración remota no reactiva controles históricos ni pisa un reset', () => {
+  const restoration = useChat.slice(
+    useChat.indexOf('const restorationVersion'),
+    useChat.indexOf('return () =>', useChat.indexOf('const restorationVersion')),
+  )
+  assert.match(restoration, /restorationVersion !== conversationVersionRef\.current/)
+  assert.match(restoration, /createNewSessionMessages\(historicalMessages, business\)/)
+  assert.doesNotMatch(restoration, /quickReplies: QUICK_REPLIES_INICIAL/)
+  assert.match(useChat, /const reset = useCallback[\s\S]*conversationVersionRef\.current \+= 1/)
 })
 
 test('la confirmación de presupuesto usa una acción interna estable', () => {
@@ -113,7 +137,7 @@ test('el texto libre conserva los comandos de menú', () => {
 test('seleccionar una quick reply registra una sola vez el label y no altera el contrato API', () => {
   assert.match(useChat, /const processMessage = useCallback\(async \(text: string, quickReply\?: QuickReplyOption\)/)
   assert.match(useChat, /const userMessage: Message = \{[\s\S]*text,[\s\S]*\}/)
-  assert.match(useChat, /savePublicMessage\(business\.slug, consultationId, 'cliente', text\)/)
+  assert.match(useChat, /persistPublicMessage\(consultationId, 'cliente', text\)/)
   assert.equal((useChat.match(/processMessage\(option\.label, option\)/g) ?? []).length, 1)
   assert.match(publicApi, /body: JSON\.stringify\(\{ emisor, contenido, tipoMensaje: 'texto' \}\)/)
 })
